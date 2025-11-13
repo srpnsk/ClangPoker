@@ -1,16 +1,15 @@
 #include "stack.h"
-#include <stdio.h>
-#include <stdlib.h>
+#include "malloc-wrapper.h"
 
 stack *stack_init() {
-  stack *s = (stack *)malloc(sizeof(stack));
+  stack *s = (stack *)xmalloc(sizeof(stack));
 
   s->node = NULL;
   return s;
 }
 
 void stack_push(stack *s, void *item) {
-  stack_node *node = (stack_node *)malloc(sizeof(stack_node));
+  stack_node *node = (stack_node *)xmalloc(sizeof(stack_node));
 
   node->item = item;
   node->next = s->node;
