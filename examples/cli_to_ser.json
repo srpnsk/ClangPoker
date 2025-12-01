@@ -1,0 +1,13 @@
+{
+    "examples": [
+        {
+            "action": "PLAY_CARD",
+            "card_index": 2,
+            "chosen_color": null
+        },
+        {
+            "action": "CHOOSE_COLOR",
+            "chosen_color": "GREEN"
+        }
+    ]
+}

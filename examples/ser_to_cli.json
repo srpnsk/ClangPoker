@@ -1,0 +1,24 @@
+{
+  "type": "GAME_STATE",
+  "turn_id": 12,
+  "current_player_name": "Alice",
+  "direction": "CLOCKWISE",
+  "discard_pile": {
+    "color": "RED",
+    "value": "DRAW_TWO",
+    "chosen_color": null
+  },
+  "my_hand": [
+    {"color": "YELLOW", "value": "SKIP"},
+    {"color": "GREEN", "value": "1"},
+    {"color": "WILD_COLOR", "value": "WILD_FOUR"}
+  ],
+  "opponents": [
+    {"name": "Bob", "card_count": 5},
+    {"name": "Charlie", "card_count": 1}
+  ],
+  "log": [
+    {"message": "Bob played RED 7", "timestamp": "12:01"},
+    {"message": "Charlie took 1 card", "timestamp": "12:02"}
+  ]
+}
