@@ -1,36 +1,44 @@
 // card.h
 #ifndef CARD_H
 #define CARD_H
+#include <stdio.h>
 
 // ----- COLOR ENUM -----
 typedef enum {
-    COLOR_RED,
-    COLOR_YELLOW,
-    COLOR_GREEN,
-    COLOR_BLUE,
-    COLOR_WILD  // Only for wild cards
+  COL_RED,
+  COL_YELLOW,
+  COL_GREEN,
+  COL_BLUE,
+  COL_WILD // Only for wild cards
 } Color;
 
 // ----- VALUE / TYPE ENUM -----
 typedef enum {
-    // Number cards
-    VALUE_0, VALUE_1, VALUE_2, VALUE_3, VALUE_4,
-    VALUE_5, VALUE_6, VALUE_7, VALUE_8, VALUE_9,
+  // Number cards
+  VAL_0,
+  VAL_1,
+  VAL_2,
+  VAL_3,
+  VAL_4,
+  VAL_5,
+  VAL_6,
+  VAL_7,
+  VAL_8,
+  VAL_9,
+  // Action cards
+  VAL_SKIP,
+  VAL_REVERSE,
+  VAL_DRAW_TWO,
 
-    // Action cards
-    VALUE_SKIP,
-    VALUE_REVERSE,
-    VALUE_DRAW_TWO,
-
-    // Wilds
-    VALUE_WILD,
-    VALUE_WILD_DRAW_FOUR
+  // Wilds
+  VAL_WILD,
+  VAL_WILD_DRAW_FOUR
 } Value;
 
 // ----- CARD STRUCT -----
 typedef struct {
-    Color color;
-    Value value;
+  Color color;
+  Value value;
 } Card;
 
 #endif
