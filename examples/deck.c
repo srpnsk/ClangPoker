@@ -27,7 +27,7 @@ void shuffleDeck(Deck *deck) {
 // }
 
 // New! refill with refill from discard deck
-Card drawCard(Deck *deck, DiscardPile *discard) {
+Card drawCard(Deck *deck, Deck *discard) {
   if (deck->top >= UNO_DECK_SIZE) {
     // Try to refill from discard pile
     refillDrawPile(deck, discard);
@@ -77,15 +77,12 @@ void createUnoDeck(Deck *deck) {
   deck->top = 0;
 }
 
-// Initializing discard pile
-void initDiscardPile(DiscardPile *dp) { dp->top = 0; }
-
 // Push a played card onto the discard pile
-void discardCard(DiscardPile *dp, Card c) { dp->cards[dp->top++] = c; }
+void discardCard(Deck *dp, Card c) { dp->cards[dp->top++] = c; }
 
 // Deck refill
 
-void refillDrawPile(Deck *draw, DiscardPile *discard) {
+void refillDrawPile(Deck *draw, Deck *discard) {
   if (discard->top <= 1) {
     // No cards to refill with (impossible in real gameplay)
     return;

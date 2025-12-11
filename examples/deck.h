@@ -7,27 +7,18 @@
 #define UNO_DECK_SIZE 108
 
 typedef struct {
-    Card cards[UNO_DECK_SIZE];
-    int top;   // index of the next card to draw
+  Card cards[UNO_DECK_SIZE];
+  int top; // index of the next card to draw
 } Deck;
-
-typedef struct {
-    Card cards[UNO_DECK_SIZE];
-    int top;   // Index of the next open slot (also = # of cards in discard)
-} DiscardPile; // по названию думаю понято
-
 
 void createUnoDeck(Deck *deck);
 
 void shuffleDeck(Deck *deck);
 
-Card drawCard(Deck *deck, DiscardPile *discard);
+Card drawCard(Deck *deck, Deck *discard);
 
+void initDiscardPile(Deck *dp);
 
-void initDiscardPile(DiscardPile *dp);
-
-void discardCard(DiscardPile *dp, Card c);
-
-void refillDrawPile(Deck *draw, DiscardPile *discard);
+void refillDrawPile(Deck *draw, Deck *discard);
 
 #endif
