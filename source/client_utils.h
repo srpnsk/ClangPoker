@@ -51,6 +51,12 @@ bool check_min_size(void);
 void show_size_warning(void);
 void wait_for_proper_size(void);
 
+// client_utils.h - добавить в конец
+extern bool in_lobby;
+extern bool waiting_for_player_selection;
+extern int selected_players;
+extern char room_status[100];
+
 void add_message(const char *text, bool from_server, bool is_json);
 void add_game_action(const char *player, const char *action, Card card);
 
@@ -64,6 +70,7 @@ void draw_interface(int rows, int cols);
 void parse_game_state(const char *json_string);
 
 bool handle_command(const char *command);
+bool handle_player_selection(int ch);
 
 void print_card_fancy(int x, int y, Card card, int index, bool highlight);
 void draw_player_hand(int start_y, int start_x, int width);
@@ -71,5 +78,6 @@ void draw_message_history(int start_row, int end_row, int width);
 void draw_players(int start_y, int start_x, int width);
 void draw_game_state(int start_y, int start_x, int width);
 void draw_interface(int rows, int cols);
+void draw_player_selection_screen(int rows, int cols);
 
 #endif

@@ -35,6 +35,8 @@ int main(int argc, char *argv[]) {
   printf("Connected successfully! Starting UI...\n");
   sleep(1); // Даем время увидеть сообщение
 
+  selected_players = 4; // Значение по умолчанию
+
   initscr();
   cbreak();
   noecho();
@@ -86,6 +88,18 @@ int main(int argc, char *argv[]) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
+    // ====== ЭКРАН ВЫБОРА КОЛИЧЕСТВА ИГРОКОВ ======
+    if (waiting_for_player_selection) {
+      draw_player_selection_screen(rows, cols);
+
+      timeout(-1);
+      int ch = getch();
+
+      handle_player_selection(ch);
+
+      continue;
+    }
+
     time_t now = time(NULL);
     if (my_turn && now - last_time_update >= 1) {
       time_left--;
@@ -95,6 +109,40 @@ int main(int argc, char *argv[]) {
     }
 
     draw_interface(rows, cols);
+
+    // ====== СПЕЦИАЛЬНЫЙ ЭКРАН ЛОББИ ======
+    if (in_lobby && current_room < 0) {
+      // Еще не присоединились к комнате
+      attron(A_BOLD | COLOR_PAIR(6));
+      mvprintw(rows / 2 - 2, cols / 2 - 20,
+               "════════════════════════════════════════");
+      mvprintw(rows / 2 - 1, cols / 2 - 20,
+               "       Finding suitable game room       ");
+      mvprintw(rows / 2, cols / 2 - 20,
+               "════════════════════════════════════════");
+      attroff(A_BOLD | COLOR_PAIR(6));
+
+      mvprintw(rows / 2 + 1, cols / 2 - 25, "Selected: %d players",
+               selected_players);
+      mvprintw(rows / 2 + 2, cols / 2 - 25, "Waiting for server response...");
+
+    } else if (in_lobby && current_room >= 0) {
+      // Присоединились к комнате, ждем игроков
+      attron(A_BOLD | COLOR_PAIR(6));
+      mvprintw(rows / 2 - 2, cols / 2 - 25,
+               "══════════════════════════════════════════════");
+      mvprintw(rows / 2 - 1, cols / 2 - 25,
+               "   Waiting for %d-player game to start   ", selected_players);
+      mvprintw(rows / 2, cols / 2 - 25,
+               "══════════════════════════════════════════════");
+      attroff(A_BOLD | COLOR_PAIR(6));
+
+      mvprintw(rows / 2 + 1, cols / 2 - 25, "Room: %d | Players: %d/%d",
+               current_room, players_count, selected_players);
+      mvprintw(rows / 2 + 2, cols / 2 - 25,
+               "Type /start to begin or /leave to find another game");
+      mvprintw(rows / 2 + 3, cols / 2 - 25, "Waiting for more players...");
+    }
 
     attron(A_BOLD | COLOR_PAIR(7));
     mvprintw(rows - 2, 0, "> ");

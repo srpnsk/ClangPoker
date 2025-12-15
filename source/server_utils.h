@@ -17,6 +17,7 @@ void save_game_state(Room *room);
 Room *create_room(void);
 Room *find_room_by_id(int room_id);
 Room *find_player_room(int player_fd);
+Room *find_room_by_desired_players(int desired_players);
 void *timeout_monitor(void *arg);
 void broadcast_to_room(Room *room, const char *message, int exclude_fd);
 void next_player_room(Room *room);

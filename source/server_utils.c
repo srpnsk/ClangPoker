@@ -295,7 +295,17 @@ char *handle_client_command(int client_fd, const char *command) {
     if (room) {
       cJSON_AddStringToObject(response, "error", "Already in a room");
     } else {
-      Room *target_room = find_room_by_id(room_id);
+      int desired_players = atoi(command + 6);
+
+      // Валидация
+      if (desired_players < 2)
+        desired_players = 2;
+      if (desired_players > MAX_PLAYERS_PER_ROOM)
+        desired_players = MAX_PLAYERS_PER_ROOM;
+
+      // Ищем подходящую комнату
+      Room *target_room = find_room_by_desired_players(desired_players);
+
       if (!target_room) {
         target_room = create_room();
         if (!target_room) {
@@ -305,6 +315,8 @@ char *handle_client_command(int client_fd, const char *command) {
           return result;
         }
       }
+
+      pthread_mutex_lock(&target_room->lock);
 
       if (target_room->game.players_count >= MAX_PLAYERS_PER_ROOM) {
         cJSON_AddStringToObject(response, "error", "Room is full");
@@ -339,6 +351,9 @@ char *handle_client_command(int client_fd, const char *command) {
         cJSON_AddStringToObject(response, "message", "Joined room");
         cJSON_AddNumberToObject(response, "room_id", target_room->id);
         cJSON_AddStringToObject(response, "player_name", p->name);
+        cJSON_AddNumberToObject(response, "current_players",
+                                target_room->game.players_count);
+        cJSON_AddNumberToObject(response, "desired_players", desired_players);
 
         char msg[100];
         snprintf(msg, sizeof(msg), "Player %s joined the room", p->name);
@@ -793,4 +808,28 @@ void cleanup_rooms(void) {
   }
 
   pthread_mutex_unlock(&rooms_mutex);
+}
+
+Room *find_room_by_desired_players(int desired_players) {
+  pthread_mutex_lock(&rooms_mutex);
+  Room *current = rooms;
+  Room *best_match = NULL;
+
+  while (current) {
+    if (current->is_active && current->game.state == WAITING_FOR_PLAYERS &&
+        current->game.players_count < MAX_PLAYERS_PER_ROOM &&
+        current->game.players_count < desired_players) {
+
+      // Ищем комнату с максимальным количеством игроков, но не превышающим
+      // desired
+      if (!best_match ||
+          current->game.players_count > best_match->game.players_count) {
+        best_match = current;
+      }
+    }
+    current = current->next;
+  }
+
+  pthread_mutex_unlock(&rooms_mutex);
+  return best_match;
 }

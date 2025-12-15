@@ -1,4 +1,10 @@
 #include "client_utils.h"
+#include <stdbool.h>
+
+bool in_lobby = true;
+bool waiting_for_player_selection = true;
+int selected_players = 0;
+char room_status[100] = "Selecting game...";
 
 void handle_sigwinch(int sig) {
   (void)sig;
@@ -129,9 +135,11 @@ void parse_game_state(const char *json_string) {
         switch (state) {
         case 0:
           strcpy(game_status, "Waiting for players");
+          in_lobby = true;
           break;
         case 1:
           strcpy(game_status, "Game in progress");
+          in_lobby = false;
           break;
         case 2:
           strcpy(game_status, "Round ended");
@@ -254,20 +262,21 @@ void parse_game_state(const char *json_string) {
   cJSON *result = cJSON_GetObjectItem(root, "result");
   cJSON *error = cJSON_GetObjectItem(root, "error");
   cJSON *message = cJSON_GetObjectItem(root, "message");
+  cJSON *room_id = cJSON_GetObjectItem(root, "room_id");
 
-  if (result && strcmp(cJSON_GetStringValue(result), "success") == 0 &&
-      message) {
-    add_message(cJSON_GetStringValue(message), true, false);
+  if (result && strcmp(cJSON_GetStringValue(result), "success") == 0) {
+    if (room_id) {
+      current_room = cJSON_GetNumberValue(room_id);
+      in_lobby = true; // Теперь мы в лобби комнаты
+      strcpy(game_status, "In room - waiting to start");
 
-    if (strstr(cJSON_GetStringValue(message), "Joined room") != NULL) {
-      cJSON *room_id = cJSON_GetObjectItem(root, "room_id");
-      cJSON *player_name_json = cJSON_GetObjectItem(root, "player_name");
-      if (room_id) {
-        current_room = cJSON_GetNumberValue(room_id);
-        if (player_name_json) {
-          strncpy(player_name, cJSON_GetStringValue(player_name_json), 49);
-          player_name[49] = '\0';
-        }
+      cJSON *current_players = cJSON_GetObjectItem(root, "current_players");
+      cJSON *desired_players = cJSON_GetObjectItem(root, "desired_players");
+
+      if (current_players && desired_players) {
+        snprintf(room_status, sizeof(room_status), "Room %d: %d/%d players",
+                 current_room, (int)cJSON_GetNumberValue(current_players),
+                 (int)cJSON_GetNumberValue(desired_players));
       }
     }
   } else if (error) {
@@ -280,7 +289,19 @@ void parse_game_state(const char *json_string) {
 }
 
 bool handle_command(const char *command) {
-  if (strcmp(command, "/connect") == 0) {
+  if (strcmp(command, "/lobby") == 0) {
+    if (!in_lobby) {
+      send_to_server("/leave");
+      in_lobby = true;
+      waiting_for_player_selection = true;
+      current_room = -1;
+      strcpy(room_status, "Selecting game...");
+      add_message("Returned to lobby", true, false);
+    } else {
+      add_message("Already in lobby", true, false);
+    }
+    return true;
+  } else if (strcmp(command, "/connect") == 0) {
     if (connect_to_server()) {
       add_message("Connected to UNO server", true, false);
     } else {
@@ -500,13 +521,23 @@ void draw_interface(int rows, int cols) {
     attroff(COLOR_PAIR(1) | A_BOLD);
   }
 
-  printw(" | Room: ");
-  if (current_room >= 0) {
-    attron(COLOR_PAIR(2));
-    printw("%d", current_room);
-    attroff(COLOR_PAIR(2));
+  printw(" | ");
+
+  if (in_lobby) {
+    attron(COLOR_PAIR(2) | A_BOLD);
+    printw("LOBBY");
+    attroff(COLOR_PAIR(2) | A_BOLD);
+    printw(": %s", room_status);
   } else {
-    printw("None");
+    printw("Room: ");
+    if (current_room >= 0) {
+      attron(COLOR_PAIR(2));
+      printw("%d", current_room);
+      attroff(COLOR_PAIR(2));
+    } else {
+      printw("None");
+    }
+    printw(" | %s", game_status);
   }
 
   printw(" | Player: %s | %s", player_name, game_status);
@@ -542,4 +573,140 @@ void draw_interface(int rows, int cols) {
   for (int i = 0; i < cols; i++) {
     mvaddch(rows - 3, i, ACS_HLINE);
   }
+}
+
+// client_utils.c - новая функция
+void draw_player_selection_screen(int rows, int cols) {
+  // Очищаем экран
+  clear();
+
+  // Красивая рамка
+  attron(A_BOLD | COLOR_PAIR(6));
+  mvprintw(rows / 2 - 8, cols / 2 - 25,
+           "╔══════════════════════════════════════════════╗");
+  for (int i = rows / 2 - 7; i <= rows / 2 + 7; i++) {
+    mvprintw(i, cols / 2 - 25,
+             "║                                                ║");
+  }
+  mvprintw(rows / 2 + 8, cols / 2 - 25,
+           "╚══════════════════════════════════════════════╝");
+
+  // Заголовок
+  mvprintw(rows / 2 - 7, cols / 2 - 12, "WELCOME TO UNO!");
+  attroff(A_BOLD | COLOR_PAIR(6));
+
+  // Описание
+  attron(COLOR_PAIR(7));
+  mvprintw(rows / 2 - 5, cols / 2 - 23,
+           "Choose how many players you want to play with:");
+  attroff(COLOR_PAIR(7));
+
+  // Варианты выбора
+  int options_y = rows / 2 - 3;
+
+  struct {
+    int players;
+    const char *description;
+    const char *tip;
+  } options[] = {{2, "1 vs 1", "Fast duel"},
+                 {3, "Three players", "Small group"},
+                 {4, "Standard game", "Recommended"},
+                 {5, "Five players", "Chaotic fun"},
+                 {6, "Maximum", "Full table"}};
+
+  for (int i = 0; i < 5; i++) {
+    int x = cols / 2 - 22;
+    int y = options_y + i;
+
+    // Если этот вариант выбран - подсвечиваем
+    if (selected_players == options[i].players) {
+      attron(A_REVERSE | COLOR_PAIR(2));
+    } else {
+      attron(COLOR_PAIR(5));
+    }
+
+    mvprintw(y, x, "[%d]", options[i].players);
+
+    if (selected_players == options[i].players) {
+      attroff(A_REVERSE | COLOR_PAIR(2));
+    } else {
+      attroff(COLOR_PAIR(5));
+    }
+
+    attron(COLOR_PAIR(5));
+    mvprintw(y, x + 5, " %-15s", options[i].description);
+    attron(COLOR_PAIR(3));
+    mvprintw(y, x + 22, "%-15s", options[i].tip);
+    attroff(COLOR_PAIR(3) | COLOR_PAIR(5));
+  }
+
+  // Инструкции
+  attron(A_BOLD | COLOR_PAIR(1));
+  mvprintw(rows / 2 + 3, cols / 2 - 23, "Use UP/DOWN arrows to select");
+  mvprintw(rows / 2 + 4, cols / 2 - 23, "Press ENTER to confirm choice");
+  mvprintw(rows / 2 + 5, cols / 2 - 23, "Press ESC to cancel and quit");
+  attroff(A_BOLD | COLOR_PAIR(1));
+
+  // Текущий статус
+  if (selected_players > 0) {
+    attron(A_BOLD | COLOR_PAIR(2));
+    mvprintw(rows / 2 + 7, cols / 2 - 15, "Selected: %d players",
+             selected_players);
+    attroff(A_BOLD | COLOR_PAIR(2));
+  }
+
+  refresh();
+}
+
+// Функция для обработки ввода на экране выбора
+bool handle_player_selection(int ch) {
+  switch (ch) {
+  case KEY_UP:
+    if (selected_players > 2) {
+      selected_players--;
+    } else {
+      selected_players = 6; // Циклический переход
+    }
+    return true;
+
+  case KEY_DOWN:
+    if (selected_players < 6) {
+      selected_players++;
+    } else {
+      selected_players = 2; // Циклический переход
+    }
+    return true;
+
+  case '\n': // ENTER
+  case '\r':
+    if (selected_players >= 2 && selected_players <= 6) {
+      // Отправляем выбор на сервер
+      char command[50];
+      snprintf(command, sizeof(command), "/join %d", selected_players);
+
+      if (send_to_server(command)) {
+        strcpy(room_status, "Joining game...");
+        waiting_for_player_selection = false;
+        add_message("Looking for game...", false, false);
+      } else {
+        add_message("Failed to send selection to server", true, false);
+      }
+      return true;
+    }
+    break;
+
+  case 27: // ESC
+    should_quit = 1;
+    return true;
+
+  case '2':
+  case '3':
+  case '4':
+  case '5':
+  case '6':
+    selected_players = ch - '0';
+    return true;
+  }
+
+  return false;
 }
