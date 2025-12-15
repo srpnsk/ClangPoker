@@ -1,10 +1,19 @@
 #include "client_net.h"
 
+char *server_ip = "127.0.0.1"; // значение по умолчанию
+int sockfd = -1;
+char game_status[100] = "Disconnected";
+bool my_turn = false;
+int hand_size = 0;
+int players_count = 0;
+int current_room = -1;
+
 bool connect_to_server(void) {
   struct sockaddr_in server_addr;
 
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
+    perror("socket() failed");
     return false;
   }
 
@@ -22,6 +31,7 @@ bool connect_to_server(void) {
   server_addr.sin_port = htons(PORT);
 
   if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
+    perror("inet_pton() failed");
     close(sockfd);
     sockfd = -1;
     return false;
@@ -29,6 +39,7 @@ bool connect_to_server(void) {
 
   if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
       0) {
+    perror("connect() failed");
     close(sockfd);
     sockfd = -1;
     return false;

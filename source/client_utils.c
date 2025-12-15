@@ -484,7 +484,12 @@ void draw_interface(int rows, int cols) {
   mvprintw(0, 2, "UNO Game Client");
   attroff(A_BOLD | COLOR_PAIR(6));
 
-  mvprintw(1, 2, "Status: ");
+  mvprintw(1, 2, "Server: ");
+  attron(COLOR_PAIR(4));
+  printw("%s:%d", server_ip, PORT);
+  attroff(COLOR_PAIR(4));
+
+  printw(" | Status: ");
   if (sockfd >= 0) {
     attron(COLOR_PAIR(3) | A_BOLD);
     printw("CONNECTED");

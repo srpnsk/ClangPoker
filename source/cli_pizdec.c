@@ -1,6 +1,19 @@
 #include "client_utils.h"
+#include <stdlib.h>
 
 int main(int argc, char *argv[]) {
+  if (argc != 2) {
+    printf("UNO Game Client\n");
+    printf("Usage: %s <server_ip>\n", argv[0]);
+    printf("\nExamples:\n");
+    printf("  %s 127.0.0.1          # Local server\n", argv[0]);
+    printf("  %s 192.168.1.100      # Server in local network\n", argv[0]);
+    printf("  %s server.example.com # Remote server\n", argv[0]);
+
+    exit(0);
+  } else {
+    server_ip = argv[1];
+  }
   char input_buffer[INPUT_MAX] = {0};
   int cursor_pos = 0;
   int input_len = 0;
@@ -8,6 +21,19 @@ int main(int argc, char *argv[]) {
 
   setlocale(LC_ALL, "");
   init_signals();
+
+  printf("UNO Game Client\n");
+  printf("Connecting to server: %s:%d\n", server_ip, PORT);
+
+  if (!connect_to_server()) {
+    fprintf(stderr, "Failed to connect to server %s:%d\n", server_ip, PORT);
+    fprintf(stderr, "Make sure server is running and IP address is correct.\n");
+    fprintf(stderr, "You can specify IP: %s <server_ip>\n", argv[0]);
+    exit(1);
+  }
+
+  printf("Connected successfully! Starting UI...\n");
+  sleep(1); // Даем время увидеть сообщение
 
   initscr();
   cbreak();
@@ -36,7 +62,6 @@ int main(int argc, char *argv[]) {
   }
 
   add_message("Welcome to UNO Client!", true, false);
-  add_message("Use /connect to connect to server", true, false);
   add_message("Use /rooms to see available rooms", true, false);
   add_message("Use /help for list of commands", true, false);
 
