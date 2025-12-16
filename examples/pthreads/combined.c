@@ -58,7 +58,27 @@ RoomProcess *find_room_process(int room_id);
 int find_free_client_slot();
 void remove_client(int client_fd);
 void send_spam_to_client(int client_fd);
+ssize_t send_all(int fd, const void *buf, size_t len);
 int run_server();
+
+ssize_t send_all(int fd, const void *buf, size_t len) {
+  size_t total = 0;
+  const char *p = buf;
+
+  while (total < len) {
+    ssize_t n = send(fd, p + total, len - total, 0);
+
+    if (n > 0) {
+      total += n;
+    } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      return total; // отправили сколько смогли
+    } else {
+      return -1; // ошибка или клиент умер
+    }
+  }
+
+  return total;
+}
 
 // Функция для отправки мусора клиенту
 void send_spam_to_client(int client_fd) {
@@ -82,7 +102,7 @@ void send_spam_to_client(int client_fd) {
     snprintf(msg, sizeof(msg), "[%d/%d] %s", i + 1, num_messages,
              spam_messages[rand() % 10]);
 
-    ssize_t sent = send(client_fd, msg, strlen(msg), 0);
+    ssize_t sent = send_all(client_fd, msg, strlen(msg));
     printf("[DEBUG] Отправлено %ld байт спама клиенту fd=%d\n", sent,
            client_fd);
 
@@ -93,7 +113,8 @@ void send_spam_to_client(int client_fd) {
     usleep(200000);
   }
 
-  send(client_fd, "=== КОНЕЦ СПАМА ===\n", 21, 0);
+  char *limit_msg = "=== КОНЕЦ СПАМА ===\n";
+  send_all(client_fd, limit_msg, strlen(limit_msg));
 }
 
 int send_fd(int sock, int fd_to_send) {
@@ -219,7 +240,7 @@ void handle_unknown(int client_fd) {
 
   // Простое приветствие
   char *welcome_msg = "Добро пожаловать! Введите ваше имя: ";
-  ssize_t sent = send(client_fd, welcome_msg, strlen(welcome_msg), 0);
+  ssize_t sent = send_all(client_fd, welcome_msg, strlen(welcome_msg));
   printf("[DEBUG] Отправлено приветствие: %ld байт\n", sent);
 
   char buffer[BUFFER_SIZE];
@@ -246,7 +267,7 @@ int handle_lobby(int client_fd) {
 
   char *question =
       "Введите желаемое количество участников в комнате (от 1 до 10): ";
-  send(client_fd, question, strlen(question), 0);
+  send_all(client_fd, question, strlen(question));
 
   char buffer[BUFFER_SIZE];
   ssize_t bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
@@ -260,8 +281,9 @@ int handle_lobby(int client_fd) {
              desired_participants);
       return desired_participants;
     } else {
-      send(client_fd,
-           "Некорректный ввод. Используем значение по умолчанию (3).\n", 60, 0);
+      send_all(client_fd,
+               "Некорректный ввод. Используем значение по умолчанию (3).\n",
+               60);
       return 3;
     }
   }
@@ -428,7 +450,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
   char ready_msg[100];
   snprintf(ready_msg, sizeof(ready_msg),
            "Комната %d готова к работе (PID=%d)\n", room_id, getpid());
-  send(parent_fd, ready_msg, strlen(ready_msg), 0);
+  send_all(parent_fd, ready_msg, strlen(ready_msg));
 
   while (1) {
     int n = epoll_wait(epoll_fd, events, 10, -1);
@@ -458,7 +480,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
                    room_id, new_client_fd);
 
             char *reject_msg = "Комната заполнена!\n";
-            send(new_client_fd, reject_msg, strlen(reject_msg), 0);
+            send_all(new_client_fd, reject_msg, strlen(reject_msg));
             close(new_client_fd);
             continue;
           }
@@ -486,7 +508,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
                    "Добро пожаловать в комнату %d! Участников: %d/%d\n",
                    room_id, client_count, max_participants);
 
-          ssize_t sent = send(new_client_fd, welcome, strlen(welcome), 0);
+          ssize_t sent = send_all(new_client_fd, welcome, strlen(welcome));
           printf(
               "[Комната %d] Отправлено приветствие клиенту fd=%d: %ld байт\n",
               room_id, new_client_fd, sent);
@@ -497,7 +519,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
 
             for (int j = 0; j < client_count; j++) {
               char *limit_msg = "\n=== ЛИМИТ УЧАСТНИКОВ ДОСТИГНУТ! ===\n";
-              send(client_fds[j], limit_msg, strlen(limit_msg), 0);
+              send_all(client_fds[j], limit_msg, strlen(limit_msg));
               send_spam_to_client(client_fds[j]);
             }
             spam_sent = 1;
@@ -543,10 +565,10 @@ void room_process(int room_id, int parent_fd, int max_participants) {
 
           // Эхо-ответ
           char response[BUFFER_SIZE];
-          snprintf(response, sizeof(response), "[Комната %d] Эхо: %s", room_id,
-                   buffer);
+          snprintf(response, sizeof(response), "[Комната %d] Эхо: %.900s",
+                   room_id, buffer);
 
-          ssize_t sent = send(fd, response, strlen(response), 0);
+          ssize_t sent = send_all(fd, response, strlen(response));
           printf("[Комната %d] Отправлен ответ клиенту fd=%d: %ld байт\n",
                  room_id, fd, sent);
         }
