@@ -5,7 +5,7 @@
 #include "utils.h"
 
 // Глобальные переменные сервера
-extern RoomProcess rooms[MAX_ROOMS];
+extern RoomProcess rooms[MAX_ROOMS]; // массив с комнатами, крч да
 extern Client clients[MAX_CLIENTS];
 extern int client_count;
 
