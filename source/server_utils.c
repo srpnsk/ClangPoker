@@ -1,4 +1,5 @@
 #include "server_utils.h"
+#include "card_utils.h"
 
 cJSON *create_card_json(Card card) {
   cJSON *card_obj = cJSON_CreateObject();
@@ -147,6 +148,7 @@ Room *find_room_by_id(int room_id) {
   return NULL;
 }
 
+// FIXME: тут мы локируем и глобальный поток, и комнатный
 Room *find_player_room(int player_fd) {
   pthread_mutex_lock(&rooms_mutex);
   Room *current = rooms;
@@ -290,6 +292,7 @@ char *handle_client_command(int client_fd, const char *command) {
     cJSON_AddItemToObject(response, "rooms", rooms_array);
 
   } else if (strncmp(command, "/join ", 6) == 0) {
+    // FIXME: тут тоже пипяо будет
     int room_id = atoi(command + 6);
 
     if (room) {

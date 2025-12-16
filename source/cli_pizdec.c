@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
   char input_buffer[INPUT_MAX] = {0};
   int cursor_pos = 0;
   int input_len = 0;
-  static time_t last_time_update = 0;
+  time_t last_time_update = 0;
 
   setlocale(LC_ALL, "");
   init_signals();
@@ -88,15 +88,12 @@ int main(int argc, char *argv[]) {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
-    // ====== ЭКРАН ВЫБОРА КОЛИЧЕСТВА ИГРОКОВ ======
+    // FIXME: отсюда может быть источник багов
     if (waiting_for_player_selection) {
       draw_player_selection_screen(rows, cols);
-
       timeout(-1);
       int ch = getch();
-
       handle_player_selection(ch);
-
       continue;
     }
 
@@ -156,6 +153,7 @@ int main(int argc, char *argv[]) {
 
     refresh();
 
+    // FIXME: эта хрень тоже уязвима, мы рискуем потерять часть данных
     char server_buffer[BUFFER_SIZE];
     if (receive_from_server(server_buffer, sizeof(server_buffer))) {
       add_message(server_buffer, true, true);

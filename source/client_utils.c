@@ -1,5 +1,4 @@
 #include "client_utils.h"
-#include <stdbool.h>
 
 bool in_lobby = true;
 bool waiting_for_player_selection = true;
@@ -91,6 +90,7 @@ void add_message(const char *text, bool from_server, bool is_json) {
   }
 }
 
+/*
 void add_game_action(const char *player, const char *action, Card card) {
   if (game_history_count < 100) {
     strncpy(game_history[game_history_count].player_name, player, 49);
@@ -108,6 +108,7 @@ void add_game_action(const char *player, const char *action, Card card) {
     game_history[99].timestamp = time(NULL);
   }
 }
+*/
 
 void parse_game_state(const char *json_string) {
   cJSON *root = cJSON_Parse(json_string);
@@ -575,7 +576,6 @@ void draw_interface(int rows, int cols) {
   }
 }
 
-// client_utils.c - новая функция
 void draw_player_selection_screen(int rows, int cols) {
   // Очищаем экран
   clear();
@@ -658,7 +658,6 @@ void draw_player_selection_screen(int rows, int cols) {
   refresh();
 }
 
-// Функция для обработки ввода на экране выбора
 bool handle_player_selection(int ch) {
   switch (ch) {
   case KEY_UP:

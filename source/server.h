@@ -84,55 +84,8 @@ typedef struct {
   struct sockaddr_in addr;
 } ClientInfo;
 
-// Прототипы функций
-void create_uno_deck(Deck *deck);
-void shuffle_deck(Deck *deck);
-Card draw_card(Deck *deck);
-const char *color_to_string(Color color);
-const char *value_to_string(Value value);
-cJSON *create_card_json(Card card);
-void save_game_state(Room *room);
-void load_game_state(Room *room, const char *filename);
-Room *create_room(void);
-Room *find_room_by_id(int room_id);
-Room *find_player_room(int player_fd);
-void *timeout_monitor(void *arg);
-void broadcast_to_room(Room *room, const char *message, int exclude_fd);
-void next_player_room(Room *room);
-bool can_play_card(Card player_card, Color current_color, Card top_card);
-char *handle_client_command(int client_fd, const char *command);
-char *handle_room_command(Room *room, int client_fd, const char *command);
-void handle_signal(int sig);
-int set_keepalive(int sockfd);
-void close_client(int client_fd, int epoll_fd);
-void cleanup_rooms(void);
-
-#include <pthread.h>
-#include <time.h>
-
-#define PORT 8080
-#define BUFFER_SIZE 4096
-#define MAX_EVENTS 1000
-#define MAX_CONNECTIONS 10000
-#define UNO_DECK_SIZE 108
-#define MAX_ROOMS 10
-
-#define MAX_PLAYERS_PER_ROOM 6
-#define MIN_PLAYERS_PER_ROOM 2
-#define TURN_TIMEOUT 30 // секунд
-
 // Глобальные структуры
 extern pthread_mutex_t rooms_mutex;
+extern volatile sig_atomic_t running;
 
-// Прототипы функций
-Room *find_available_room(void);
-Room *find_room_by_id(int room_id);
-Room *find_player_room(int player_fd);
-void save_game_state(Room *room);
-void load_game_state(Room *room, const char *filename);
-void *timeout_monitor(void *arg);
-void cleanup_empty_rooms(void);
-void broadcast_to_room(Room *room, const char *message, int exclude_fd);
-
-static volatile sig_atomic_t running = 1;
 #endif

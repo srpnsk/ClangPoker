@@ -4,7 +4,6 @@
 Color parse_color(const char *color_str) {
   if (!color_str)
     return COL_WILD;
-
   if (strcmp(color_str, "red") == 0)
     return COL_RED;
   if (strcmp(color_str, "yellow") == 0)
@@ -19,7 +18,6 @@ Color parse_color(const char *color_str) {
 Value parse_value(const char *value_str) {
   if (!value_str)
     return VAL_0;
-
   if (strcmp(value_str, "0") == 0)
     return VAL_0;
   if (strcmp(value_str, "1") == 0)

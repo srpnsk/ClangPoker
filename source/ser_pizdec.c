@@ -1,5 +1,7 @@
 #include "server_utils.h"
 
+volatile sig_atomic_t running = 1;
+
 int main() {
   int server_fd = -1, epoll_fd = -1;
   struct sockaddr_in server_addr;

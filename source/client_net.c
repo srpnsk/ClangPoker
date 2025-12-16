@@ -1,4 +1,5 @@
 #include "client_net.h"
+#include <netinet/in.h>
 
 char *server_ip = "127.0.0.1"; // значение по умолчанию
 int sockfd = -1;

@@ -80,6 +80,7 @@ void shuffle_deck(Deck *deck) {
   }
 }
 
+// FIXME: что будет, если колода кончится?..
 Card draw_card(Deck *deck) {
   if (deck->top < UNO_DECK_SIZE) {
     return deck->cards[deck->top++];
