@@ -61,16 +61,16 @@ void send_spam_to_client(int client_fd) {
   Message msg = {0};
   msg.type = MSG_SYSTEM;
 
-  char *spam_messages[] = {"SPAM: Бесплатные деньги!",
-                           "SPAM: Вы выиграли iPhone!",
-                           "SPAM: Срочно! Ваш аккаунт взломали!",
-                           "SPAM: Инвестируйте в криптовалюту!",
-                           "SPAM: Скидка 90% только сегодня!",
-                           "SPAM: Ваша карта заблокирована!",
-                           "SPAM: Наследство из Нигерии!",
-                           "SPAM: Ваш компьютер заражен!",
-                           "SPAM: Срочный звонок из банка!",
-                           "SPAM: Активируйте бонусы!"};
+  char *spam_messages[] = {"SPAM: Free money!",
+                           "SPAM: You won an iPhone!",
+                           "SPAM: Urgent! Your account was hacked!",
+                           "SPAM: Invest in cryptocurrency!",
+                           "SPAM: 90% discount today only!",
+                           "SPAM: Your card has been blocked!",
+                           "SPAM: Inheritance from Nigeria!",
+                           "SPAM: Your computer is infected!",
+                           "SPAM: Urgent call from the bank!",
+                           "SPAM: Activate bonuses!"};
 
   int num_messages = 5 + rand() % 6;
 
@@ -81,7 +81,7 @@ void send_spam_to_client(int client_fd) {
     usleep(200000);
   }
 
-  strcpy(msg.text, "=== КОНЕЦ СПАМА ===");
+  strcpy(msg.text, "=== END OF SPAM ===");
   send_json_message(client_fd, MSG_SYSTEM, &msg);
 }
 
@@ -165,7 +165,7 @@ int create_server_socket(int port) {
     return -1;
   }
 
-  printf("Сервер слушает порт %d\n", port);
+  printf("Server is listening on port %d\n", port);
   return server_fd;
 }
 
@@ -190,17 +190,18 @@ int find_free_client_slot() {
 }
 
 void handle_unknown(int client_fd) {
-  printf("Обработка UNKNOWN для клиента %d\n", client_fd);
+  printf("Handling UNKNOWN for client %d\n", client_fd);
 
   Message msg = {0};
   msg.type = MSG_SYSTEM;
-  strcpy(msg.text, "Добро пожаловать! Введите ваше имя:");
+  strcpy(msg.text, "Welcome! Enter your name:");
   send_json_message(client_fd, MSG_SYSTEM, &msg);
 
   Message response;
   if (receive_json_message(client_fd, &response)) {
     if (response.type == MSG_HELLO && response.username[0]) {
-      printf("Клиент %d представился как: %s\n", client_fd, response.username);
+      printf("Client %d introduced themselves as: %s\n", client_fd,
+             response.username);
 
       int slot = find_free_client_slot();
       if (slot >= 0) {
@@ -215,21 +216,21 @@ void handle_unknown(int client_fd) {
 }
 
 void handle_lobby(int client_fd) {
-  printf("Обработка LOBBY для клиента %d\n", client_fd);
+  printf("Handling LOBBY for client %d\n", client_fd);
 
   Message msg = {0};
   msg.type = MSG_SYSTEM;
   strcpy(msg.text,
-         "Введите желаемое количество участников в комнате (от 1 до 10):");
+         "Enter the desired number of participants in the room (from 1 to 10):");
   send_json_message(client_fd, MSG_SYSTEM, &msg);
 
   Message response;
   if (receive_json_message(client_fd, &response)) {
     if (response.type == MSG_JOIN_ROOM) {
-      printf("Клиент %d хочет комнату с %d участниками\n", client_fd,
+      printf("Client %d wants a room with %d participants\n", client_fd,
              response.players);
 
-      // Сохраняем желаемое количество
+      // Save desired number
       for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clients[i].socket == client_fd) {
           clients[i].desired_participants = response.players;
@@ -237,9 +238,10 @@ void handle_lobby(int client_fd) {
         }
       }
 
-      // Отправляем подтверждение
+      // Send confirmation
       msg.type = MSG_SYSTEM;
-      snprintf(msg.text, sizeof(msg.text), "Ищем комнату с %d участниками...",
+      snprintf(msg.text, sizeof(msg.text),
+               "Looking for a room with %d participants...",
                response.players);
       send_json_message(client_fd, MSG_SYSTEM, &msg);
     }
@@ -285,8 +287,8 @@ int create_room_process(int room_id, int max_participants) {
       rooms[i].client_count = 0;
       rooms[i].max_participants = max_participants;
 
-      printf("Создана комната %d (PID=%d) с лимитом %d участников\n", room_id,
-             pid, max_participants);
+      printf("Room %d created (PID=%d) with a limit of %d participants\n",
+             room_id, pid, max_participants);
       return i;
     }
   }
@@ -295,8 +297,8 @@ int create_room_process(int room_id, int max_participants) {
 }
 
 void transfer_to_room(int client_fd, int desired_participants) {
-  printf("Поиск комнаты для клиента %d (желает %d участников)\n", client_fd,
-         desired_participants);
+  printf("Searching for a room for client %d (wants %d participants)\n",
+         client_fd, desired_participants);
 
   RoomProcess *room = find_room_by_participants(desired_participants);
 
@@ -304,15 +306,15 @@ void transfer_to_room(int client_fd, int desired_participants) {
     static int next_room_id = 1;
     int room_id = next_room_id++;
 
-    printf("Создаем новую комнату %d с лимитом %d\n", room_id,
+    printf("Creating a new room %d with a limit of %d\n", room_id,
            desired_participants);
 
     int room_index = create_room_process(room_id, desired_participants);
     if (room_index < 0) {
-      printf("Не удалось создать комнату\n");
+      printf("Failed to create room\n");
       Message msg = {0};
       msg.type = MSG_ERROR;
-      strcpy(msg.text, "Ошибка создания комнаты");
+      strcpy(msg.text, "Room creation error");
       send_json_message(client_fd, MSG_ERROR, &msg);
       close(client_fd);
       return;
@@ -329,7 +331,7 @@ void transfer_to_room(int client_fd, int desired_participants) {
   }
 
   room->client_count++;
-  printf("Клиент %d передан в комнату %d (клиентов: %d/%d)\n", client_fd,
+  printf("Client %d transferred to room %d (clients: %d/%d)\n", client_fd,
          room->room_id, room->client_count, room->max_participants);
 
   remove_client(client_fd);
@@ -347,7 +349,7 @@ void remove_client(int client_fd) {
 }
 
 void room_process(int room_id, int parent_fd, int max_participants) {
-  printf("[Комната %d PID=%d] Запущена. Максимум участников: %d\n", room_id,
+  printf("[Room %d PID=%d] Started. Maximum participants: %d\n", room_id,
          getpid(), max_participants);
 
   set_nonblocking(parent_fd);
@@ -391,15 +393,15 @@ void room_process(int room_id, int parent_fd, int max_participants) {
             break;
           }
 
-          printf("[Комната %d] Получен клиент fd=%d\n", room_id, new_client_fd);
+          printf("[Room %d] Received client fd=%d\n", room_id, new_client_fd);
 
           if (client_count >= max_participants) {
-            printf("[Комната %d] Лимит достигнут! Отказ клиенту fd=%d\n",
+            printf("[Room %d] Limit reached! Rejecting client fd=%d\n",
                    room_id, new_client_fd);
 
             Message msg = {0};
             msg.type = MSG_ERROR;
-            strcpy(msg.text, "Комната заполнена!");
+            strcpy(msg.text, "Room is full!");
             send_json_message(new_client_fd, MSG_ERROR, &msg);
             close(new_client_fd);
             continue;
@@ -411,8 +413,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
           client_ev.events = EPOLLIN | EPOLLET;
           client_ev.data.fd = new_client_fd;
 
-          if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_fd, &client_ev) <
-              0) {
+          if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_fd, &client_ev) < 0) {
             perror("epoll_ctl client");
             close(new_client_fd);
             continue;
@@ -423,16 +424,17 @@ void room_process(int room_id, int parent_fd, int max_participants) {
           Message msg = {0};
           msg.type = MSG_ROOM_READY;
           snprintf(msg.text, sizeof(msg.text),
-                   "Добро пожаловать в комнату %d! Участников: %d/%d", room_id,
+                   "Welcome to room %d! Participants: %d/%d", room_id,
                    client_count, max_participants);
           send_json_message(new_client_fd, MSG_ROOM_READY, &msg);
 
           if (client_count == max_participants && !spam_sent) {
-            printf("[Комната %d] Лимит достигнут! Отправляем спам\n", room_id);
+            printf("[Room %d] Limit reached! Sending spam\n", room_id);
 
             Message limit_msg = {0};
             limit_msg.type = MSG_SYSTEM;
-            strcpy(limit_msg.text, "=== ЛИМИТ УЧАСТНИКОВ ДОСТИГНУТ! ===");
+            strcpy(limit_msg.text,
+                   "=== PARTICIPANT LIMIT REACHED! ===");
 
             for (int j = 0; j < client_count; j++) {
               send_json_message(client_fds[j], MSG_SYSTEM, &limit_msg);
@@ -444,15 +446,14 @@ void room_process(int room_id, int parent_fd, int max_participants) {
       } else {
         Message msg;
         if (receive_json_message(fd, &msg)) {
-          printf("[Комната %d] Сообщение от fd=%d: %s\n", room_id, fd,
-                 msg.text);
+          printf("[Room %d] Message from fd=%d: %s\n", room_id, fd, msg.text);
 
-          // Рассылаем всем в комнате
+          // Broadcast to everyone in the room
           Message response = {0};
           response.type = MSG_ROOM_FORWARD;
           snprintf(response.text, sizeof(response.text),
-                   "[Комната %d] %s: %.458s", room_id,
-                   msg.username[0] ? msg.username : "Аноним", msg.text);
+                   "[Room %d] %s: %.458s", room_id,
+                   msg.username[0] ? msg.username : "Anonymous", msg.text);
 
           for (int j = 0; j < client_count; j++) {
             if (client_fds[j] != fd) {
@@ -460,13 +461,13 @@ void room_process(int room_id, int parent_fd, int max_participants) {
             }
           }
 
-          // Эхо отправителю
+          // Echo back to sender
           response.type = MSG_CHAT;
-          snprintf(response.text, sizeof(response.text), "[Эхо] %.502s",
+          snprintf(response.text, sizeof(response.text), "[Echo] %.502s",
                    msg.text);
           send_json_message(fd, MSG_CHAT, &response);
         } else {
-          printf("[Комната %d] Клиент fd=%d отключился\n", room_id, fd);
+          printf("[Room %d] Client fd=%d disconnected\n", room_id, fd);
 
           epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
 
@@ -495,7 +496,7 @@ int run_server() {
     return 1;
   }
 
-  printf("Сервер запущен. Ожидание подключений...\n");
+  printf("Server started. Waiting for connections...\n");
 
   while (1) {
     struct sockaddr_in client_addr;
@@ -510,7 +511,7 @@ int run_server() {
 
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-    printf("Новое подключение: %s:%d (fd=%d)\n", client_ip,
+    printf("New connection: %s:%d (fd=%d)\n", client_ip,
            ntohs(client_addr.sin_port), client_fd);
 
     handle_unknown(client_fd);
@@ -534,8 +535,8 @@ int main() {
 
   srand(time(NULL));
 
-  printf("Запуск TCP сервера с JSON-сообщениями...\n");
-  printf("Порт: %d\n", SERVER_PORT);
+  printf("Starting TCP server with JSON messages...\n");
+  printf("Port: %d\n", SERVER_PORT);
 
   return run_server();
 }
