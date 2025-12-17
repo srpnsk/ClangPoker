@@ -62,7 +62,7 @@ int connect_to_server() {
     return -1;
   }
 
-  printf("Подключено к серверу %s:%d\n", server_ip, SERVER_PORT);
+  printf("Connected to server %s:%d\n", server_ip, SERVER_PORT);
   return sock;
 }
 
@@ -72,47 +72,8 @@ void interactive_mode(int sock) {
   Message msg = {0};
   Message response = {0};
 
-  printf("\n=== ДОБРО ПОЖАЛОВАТЬ В ИГРОВОЙ КЛИЕНТ ===\n");
-  printf("Все сообщения обмениваются в формате JSON\n");
-
-  if (receive_json_message(sock, &response)) {
-    if (response.type == MSG_SYSTEM && response.text[0]) {
-      printf("Сервер: %s\n", response.text);
-    }
-  }
-
-  printf("Введите ваше имя: ");
-  fgets(user_input, sizeof(user_input), stdin);
-  clean_input(user_input);
-
-  if (strlen(user_input) == 0) {
-    strcpy(user_input, "Гость");
-  } else if (strlen(user_input) > 31) {
-    user_input[31] = '\0';
-  }
-
-  msg.type = MSG_HELLO;
-  strncpy(msg.username, user_input, sizeof(msg.username) - 1);
-  send_json_message(sock, MSG_HELLO, &msg);
-  printf("Отправлено имя: %s\n", user_input);
-
-  if (receive_json_message(sock, &response)) {
-    if (response.type == MSG_SYSTEM && response.text[0]) {
-      printf("Сервер: %s\n", response.text);
-    }
-  }
-
-  printf("Введите желаемое количество участников в комнате: ");
-  fgets(user_input, sizeof(user_input), stdin);
-  clean_input(user_input);
-
-  int players = validate_and_parse_players(user_input);
-  printf("Используется значение: %d игроков\n", players);
-
-  msg.type = MSG_JOIN_ROOM;
-  msg.players = players;
-  send_json_message(sock, MSG_JOIN_ROOM, &msg);
-  printf("Запрошена комната на %d участников\n", players);
+  printf("\n=== WELCOME TO THE PLAYER CLIENT ===\n");
+  printf("All messages are shared using the JSON format\n");
 
   if (receive_json_message(sock, &response)) {
     if (response.type == MSG_SYSTEM && response.text[0]) {
@@ -120,7 +81,46 @@ void interactive_mode(int sock) {
     }
   }
 
-  printf("\n=== maybe you are in room, unless there are more than 10 rooms lol "
+  printf("Enter name here: ");
+  fgets(user_input, sizeof(user_input), stdin);
+  clean_input(user_input);
+
+  if (strlen(user_input) == 0) {
+    strcpy(user_input, "Guest");
+  } else if (strlen(user_input) > 31) {
+    user_input[31] = '\0';
+  }
+
+  msg.type = MSG_HELLO;
+  strncpy(msg.username, user_input, sizeof(msg.username) - 1);
+  send_json_message(sock, MSG_HELLO, &msg);
+  printf("Name sent: %s\n", user_input);
+
+  if (receive_json_message(sock, &response)) {
+    if (response.type == MSG_SYSTEM && response.text[0]) {
+      printf("Server: %s\n", response.text);
+    }
+  }
+
+  printf("Enter wanted number of players in one room: ");
+  fgets(user_input, sizeof(user_input), stdin);
+  clean_input(user_input);
+
+  int players = validate_and_parse_players(user_input);
+  printf("Value used: %d players\n", players);
+
+  msg.type = MSG_JOIN_ROOM;
+  msg.players = players;
+  send_json_message(sock, MSG_JOIN_ROOM, &msg);
+  printf("Room for %d amount of players requested\n", players);
+
+  if (receive_json_message(sock, &response)) {
+    if (response.type == MSG_SYSTEM && response.text[0]) {
+      printf("Server: %s\n", response.text);
+    }
+  }
+
+  printf("\n=== maybe you are in a room, unless there are already more than 10 rooms existing"
          "===\n");
   printf("type something to chat with other roommates\n");
   printf("to exit type 'exit' or click Ctrl+C\n\n");
@@ -131,7 +131,7 @@ void interactive_mode(int sock) {
     FD_SET(STDIN_FILENO, &readfds);
 
     int max_fd = sock > STDIN_FILENO ? sock : STDIN_FILENO;
-
+ 
     if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
       perror("select");
       break;
