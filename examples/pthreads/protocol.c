@@ -13,6 +13,10 @@ MessageType type_from_string(const char *s) {
     return MSG_CHAT;
   if (!strcmp(s, "system"))
     return MSG_SYSTEM;
+  if (!strcmp(s, "system_hello"))
+    return MSG_SYSTEM_HELLO;
+  if (!strcmp(s, "system_invite"))
+    return MSG_SYSTEM_INVITE;
   if (!strcmp(s, "room_ready"))
     return MSG_ROOM_READY;
   if (!strcmp(s, "room_forward"))
@@ -32,6 +36,10 @@ const char *type_to_string(MessageType type) {
     return "chat";
   case MSG_SYSTEM:
     return "system";
+  case MSG_SYSTEM_HELLO:
+    return "system_hello";
+  case MSG_SYSTEM_INVITE:
+    return "system_invite";
   case MSG_ROOM_READY:
     return "room_ready";
   case MSG_ROOM_FORWARD:

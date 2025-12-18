@@ -1,16 +1,21 @@
 #include "json_utils.h"
 #include <arpa/inet.h>
 #include <ctype.h>
-#include <netinet/in.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/select.h>
 #include <unistd.h>
 
 #define BUFFER_SIZE 2048
 #define SERVER_PORT 8080
 
+enum { INPUT_NONE, INPUT_USERNAME, INPUT_PLAYERS } input_mode = INPUT_NONE;
+
 char server_ip[INET_ADDRSTRLEN];
+
+static void out(const char *s) { write(STDOUT_FILENO, s, strlen(s)); }
+
+static void prompt(void) { out("> "); }
 
 void clean_input(char *input) {
   size_t len = strlen(input);
@@ -67,112 +72,126 @@ int connect_to_server() {
 }
 
 void interactive_mode(int sock) {
-  fd_set readfds;
+  struct pollfd fds[2];
+  char need_prompt = 0;
+  fds[0].fd = sock;
+  fds[0].events = POLLIN;
+
+  fds[1].fd = STDIN_FILENO;
+  fds[1].events = POLLIN;
   char user_input[512];
+  char outbuf[BUFFER_SIZE];
   Message msg = {0};
   Message response = {0};
 
-  printf("\n=== WELCOME TO THE PLAYER CLIENT ===\n");
-  printf("All messages are shared using the JSON format\n");
-
-  if (receive_json_message(sock, &response)) {
-    if (response.type == MSG_SYSTEM && response.text[0]) {
-      printf("Server: %s\n", response.text);
-    }
-  }
-
-  printf("Enter name here: ");
-  fgets(user_input, sizeof(user_input), stdin);
-  clean_input(user_input);
-
-  if (strlen(user_input) == 0) {
-    strcpy(user_input, "Guest");
-  } else if (strlen(user_input) > 31) {
-    user_input[31] = '\0';
-  }
-
-  msg.type = MSG_HELLO;
-  strncpy(msg.username, user_input, sizeof(msg.username) - 1);
-  send_json_message(sock, MSG_HELLO, &msg);
-  printf("Name sent: %s\n", user_input);
-
-  if (receive_json_message(sock, &response)) {
-    if (response.type == MSG_SYSTEM && response.text[0]) {
-      printf("Server: %s\n", response.text);
-    }
-  }
-
-  printf("Enter wanted number of players in one room: ");
-  fgets(user_input, sizeof(user_input), stdin);
-  clean_input(user_input);
-
-  int players = validate_and_parse_players(user_input);
-  printf("Value used: %d players\n", players);
-
-  msg.type = MSG_JOIN_ROOM;
-  msg.players = players;
-  send_json_message(sock, MSG_JOIN_ROOM, &msg);
-  printf("Room for %d amount of players requested\n", players);
-
-  if (receive_json_message(sock, &response)) {
-    if (response.type == MSG_SYSTEM && response.text[0]) {
-      printf("Server: %s\n", response.text);
-    }
-  }
-
-  printf("\n=== maybe you are in a room, unless there are already more than 10 rooms existing"
-         "===\n");
-  printf("type something to chat with other roommates\n");
-  printf("to exit type 'exit' or click Ctrl+C\n\n");
-
   while (1) {
-    FD_ZERO(&readfds);
-    FD_SET(sock, &readfds);
-    FD_SET(STDIN_FILENO, &readfds);
-
-    int max_fd = sock > STDIN_FILENO ? sock : STDIN_FILENO;
- 
-    if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
-      perror("select");
+    int ret = poll(fds, 2, -1);
+    if (ret < 0) {
+      perror("poll");
       break;
     }
 
-    if (FD_ISSET(STDIN_FILENO, &readfds)) {
-      fgets(user_input, sizeof(user_input), stdin);
+    if (fds[1].revents & POLLIN) {
+      ssize_t n = read(STDIN_FILENO, user_input, sizeof(user_input) - 1);
+      if (n <= 0) {
+        out("stdin closed\n");
+        break;
+      }
+
+      user_input[n] = '\0';
       clean_input(user_input);
 
       if (strcmp(user_input, "exit") == 0) {
-        printf("Exiting...\n");
+        out("Exiting...\n");
         break;
       }
 
-      msg.type = MSG_CHAT;
-      strncpy(msg.text, user_input, sizeof(msg.text) - 1);
-      send_json_message(sock, MSG_CHAT, &msg);
+      switch (input_mode) {
+      case INPUT_USERNAME:
+        if (strlen(user_input) == 0)
+          strcpy(user_input, "Guest");
+        else if (strlen(user_input) > 31)
+          user_input[31] = '\0';
+
+        msg.type = MSG_HELLO;
+        strncpy(msg.username, user_input, sizeof(msg.username) - 1);
+        send_json_message(sock, MSG_HELLO, &msg);
+
+        input_mode = INPUT_NONE;
+        break;
+
+      case INPUT_PLAYERS: {
+        int players = validate_and_parse_players(user_input);
+
+        msg.type = MSG_JOIN_ROOM;
+        msg.players = players;
+        send_json_message(sock, MSG_JOIN_ROOM, &msg);
+
+        input_mode = INPUT_NONE;
+        break;
+      }
+
+      default:
+        msg.type = MSG_CHAT;
+        strncpy(msg.text, user_input, sizeof(msg.text) - 1);
+        send_json_message(sock, MSG_CHAT, &msg);
+        break;
+      }
     }
 
-    if (FD_ISSET(sock, &readfds)) {
-      if (receive_json_message(sock, &response)) {
-        switch (response.type) {
-        case MSG_ROOM_READY:
-        case MSG_ROOM_FORWARD:
-        case MSG_CHAT:
-        case MSG_SYSTEM:
-          if (response.text[0]) {
-            printf("%s\n", response.text);
-          }
-          break;
-        case MSG_ERROR:
-          printf("ERROR: %s\n", response.text);
-          break;
-        default:
-          printf("Unknown type of message\n");
-          break;
-        }
-      } else {
-        printf("Connection to the server is lost\n");
+    if (fds[0].revents & POLLIN) {
+      if (!receive_json_message(sock, &response)) {
+        out("\nConnection to the server is lost\n");
         break;
       }
+
+      switch (response.type) {
+      case MSG_SYSTEM:
+      case MSG_ROOM_FORWARD:
+        if (response.text[0]) {
+          snprintf(outbuf, BUFFER_SIZE, "\n%s\n", response.text);
+          out(outbuf);
+        }
+        break;
+
+      case MSG_ROOM_READY:
+      case MSG_CHAT:
+        if (response.text[0]) {
+          snprintf(outbuf, BUFFER_SIZE, "\n%s\n", response.text);
+          out(outbuf);
+          need_prompt = 1;
+        }
+        break;
+
+      case MSG_SYSTEM_HELLO:
+        snprintf(outbuf, BUFFER_SIZE, "\nServer: %s\n", response.text);
+        out(outbuf);
+        need_prompt = 1;
+        input_mode = INPUT_USERNAME;
+        break;
+
+      case MSG_SYSTEM_INVITE:
+        snprintf(outbuf, BUFFER_SIZE, "\nServer: %s\n", response.text);
+        out(outbuf);
+        need_prompt = 1;
+        input_mode = INPUT_PLAYERS;
+        break;
+
+      case MSG_ERROR:
+        snprintf(outbuf, BUFFER_SIZE, "\nERROR: %s\n", response.text);
+        out(outbuf);
+        need_prompt = 1;
+        break;
+
+      default:
+        out("\nUnknown message type\n");
+        need_prompt = 1;
+        break;
+      }
+    }
+    if (need_prompt) {
+      prompt();
+      need_prompt = 0;
     }
   }
 }

@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/epoll.h>
@@ -16,10 +17,8 @@
 #define MAX_ROOMS 10
 #define SERVER_PORT 8080
 
-// Состояния клиента
 typedef enum { CLIENT_UNKNOWN, CLIENT_IN_LOBBY, CLIENT_IN_ROOM } ClientState;
 
-// Протокол сообщений (должен соответствовать протоколу клиента)
 typedef struct {
   int socket;
   ClientState state;
@@ -40,21 +39,24 @@ RoomProcess rooms[MAX_ROOMS] = {0};
 Client clients[MAX_CLIENTS] = {0};
 int client_count = 0;
 
-// Прототипы
+struct pollfd pfds[MAX_CLIENTS + 1];
+int nfds = 1;
+
 void room_process(int room_id, int parent_fd, int max_participants);
+void server_loop(int server_fd);
 int send_fd(int socket, int fd_to_send);
 int receive_fd(int socket);
 int create_server_socket(int port);
 int set_nonblocking(int fd);
-int create_socket_pair(int pair[2]);
-void handle_unknown(int client_fd);
-void handle_lobby(int client_fd);
 void transfer_to_room(int client_fd, int desired_participants);
+Client *find_client(int fd);
+void add_client(int fd);
 int create_room_process(int room_id, int max_participants);
 RoomProcess *find_room_by_participants(int desired_participants);
 int find_free_client_slot();
 void remove_client(int client_fd);
 void send_spam_to_client(int client_fd);
+void handle_message(Client *c, Message *msg);
 int run_server();
 
 void send_spam_to_client(int client_fd) {
@@ -103,12 +105,7 @@ int send_fd(int sock, int fd_to_send) {
 
   memcpy(CMSG_DATA(cmsg), &fd_to_send, sizeof(int));
 
-  if (sendmsg(sock, &msg, 0) < 0) {
-    perror("sendmsg");
-    return -1;
-  }
-
-  return 0;
+  return sendmsg(sock, &msg, 0) == 1 ? 0 : -1;
 }
 
 int receive_fd(int sock) {
@@ -176,10 +173,6 @@ int set_nonblocking(int fd) {
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-int create_socket_pair(int pair[2]) {
-  return socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
-}
-
 int find_free_client_slot() {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (clients[i].socket == 0) {
@@ -187,65 +180,6 @@ int find_free_client_slot() {
     }
   }
   return -1;
-}
-
-void handle_unknown(int client_fd) {
-  printf("Handling UNKNOWN for client %d\n", client_fd);
-
-  Message msg = {0};
-  msg.type = MSG_SYSTEM;
-  strcpy(msg.text, "Welcome! Enter your name:");
-  send_json_message(client_fd, MSG_SYSTEM, &msg);
-
-  Message response;
-  if (receive_json_message(client_fd, &response)) {
-    if (response.type == MSG_HELLO && response.username[0]) {
-      printf("Client %d introduced themselves as: %s\n", client_fd,
-             response.username);
-
-      int slot = find_free_client_slot();
-      if (slot >= 0) {
-        clients[slot].socket = client_fd;
-        clients[slot].state = CLIENT_IN_LOBBY;
-        strncpy(clients[slot].username, response.username,
-                sizeof(clients[slot].username) - 1);
-        client_count++;
-      }
-    }
-  }
-}
-
-void handle_lobby(int client_fd) {
-  printf("Handling LOBBY for client %d\n", client_fd);
-
-  Message msg = {0};
-  msg.type = MSG_SYSTEM;
-  strcpy(msg.text,
-         "Enter the desired number of participants in the room (from 1 to 10):");
-  send_json_message(client_fd, MSG_SYSTEM, &msg);
-
-  Message response;
-  if (receive_json_message(client_fd, &response)) {
-    if (response.type == MSG_JOIN_ROOM) {
-      printf("Client %d wants a room with %d participants\n", client_fd,
-             response.players);
-
-      // Save desired number
-      for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i].socket == client_fd) {
-          clients[i].desired_participants = response.players;
-          break;
-        }
-      }
-
-      // Send confirmation
-      msg.type = MSG_SYSTEM;
-      snprintf(msg.text, sizeof(msg.text),
-               "Looking for a room with %d participants...",
-               response.players);
-      send_json_message(client_fd, MSG_SYSTEM, &msg);
-    }
-  }
 }
 
 RoomProcess *find_room_by_participants(int desired_participants) {
@@ -260,7 +194,7 @@ RoomProcess *find_room_by_participants(int desired_participants) {
 
 int create_room_process(int room_id, int max_participants) {
   int socket_pair[2];
-  if (create_socket_pair(socket_pair) < 0) {
+  if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socket_pair) < 0) {
     perror("socketpair");
     return -1;
   }
@@ -354,140 +288,219 @@ void room_process(int room_id, int parent_fd, int max_participants) {
 
   set_nonblocking(parent_fd);
 
-  int epoll_fd = epoll_create1(0);
-  if (epoll_fd < 0) {
-    perror("epoll_create1");
-    exit(1);
-  }
-
-  struct epoll_event ev;
-  ev.events = EPOLLIN;
-  ev.data.fd = parent_fd;
-  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, parent_fd, &ev) < 0) {
-    perror("epoll_ctl parent");
-    exit(1);
-  }
-
-  int client_fds[100] = {0};
-  int client_count = 0;
+  struct pollfd pfds[1 + max_participants];
+  int nfds = 1;
   int spam_sent = 0;
-  struct epoll_event events[10];
+
+  pfds[0].fd = parent_fd;
+  pfds[0].events = POLLIN;
 
   while (1) {
-    int n = epoll_wait(epoll_fd, events, 10, -1);
-    if (n < 0) {
-      perror("epoll_wait");
+    int ready = poll(pfds, nfds, -1);
+    if (ready < 0) {
+      perror("poll");
       continue;
     }
 
-    for (int i = 0; i < n; i++) {
-      int fd = events[i].data.fd;
-
-      if (fd == parent_fd) {
-        while (1) {
-          int new_client_fd = receive_fd(parent_fd);
-          if (new_client_fd < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-              break;
-            perror("receive_fd");
+    if (pfds[0].revents & POLLIN) {
+      while (1) {
+        int new_fd = receive_fd(parent_fd);
+        if (new_fd < 0) {
+          if (errno == EAGAIN || errno == EWOULDBLOCK)
             break;
-          }
-
-          printf("[Room %d] Received client fd=%d\n", room_id, new_client_fd);
-
-          if (client_count >= max_participants) {
-            printf("[Room %d] Limit reached! Rejecting client fd=%d\n",
-                   room_id, new_client_fd);
-
-            Message msg = {0};
-            msg.type = MSG_ERROR;
-            strcpy(msg.text, "Room is full!");
-            send_json_message(new_client_fd, MSG_ERROR, &msg);
-            close(new_client_fd);
-            continue;
-          }
-
-          set_nonblocking(new_client_fd);
-
-          struct epoll_event client_ev;
-          client_ev.events = EPOLLIN | EPOLLET;
-          client_ev.data.fd = new_client_fd;
-
-          if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_fd, &client_ev) < 0) {
-            perror("epoll_ctl client");
-            close(new_client_fd);
-            continue;
-          }
-
-          client_fds[client_count++] = new_client_fd;
-
-          Message msg = {0};
-          msg.type = MSG_ROOM_READY;
-          snprintf(msg.text, sizeof(msg.text),
-                   "Welcome to room %d! Participants: %d/%d", room_id,
-                   client_count, max_participants);
-          send_json_message(new_client_fd, MSG_ROOM_READY, &msg);
-
-          if (client_count == max_participants && !spam_sent) {
-            printf("[Room %d] Limit reached! Sending spam\n", room_id);
-
-            Message limit_msg = {0};
-            limit_msg.type = MSG_SYSTEM;
-            strcpy(limit_msg.text,
-                   "=== PARTICIPANT LIMIT REACHED! ===");
-
-            for (int j = 0; j < client_count; j++) {
-              send_json_message(client_fds[j], MSG_SYSTEM, &limit_msg);
-              send_spam_to_client(client_fds[j]);
-            }
-            spam_sent = 1;
-          }
+          perror("receive_fd");
+          break;
         }
-      } else {
-        Message msg;
-        if (receive_json_message(fd, &msg)) {
-          printf("[Room %d] Message from fd=%d: %s\n", room_id, fd, msg.text);
 
-          // Broadcast to everyone in the room
-          Message response = {0};
-          response.type = MSG_ROOM_FORWARD;
-          snprintf(response.text, sizeof(response.text),
-                   "[Room %d] %s: %.458s", room_id,
-                   msg.username[0] ? msg.username : "Anonymous", msg.text);
+        int clients = nfds - 1;
 
-          for (int j = 0; j < client_count; j++) {
-            if (client_fds[j] != fd) {
-              send_json_message(client_fds[j], MSG_ROOM_FORWARD, &response);
-            }
+        if (clients >= max_participants) {
+          Message err = {0};
+          err.type = MSG_ERROR;
+          strcpy(err.text, "Room is full!");
+          send_json_message(new_fd, MSG_ERROR, &err);
+          close(new_fd);
+          continue;
+        }
+
+        set_nonblocking(new_fd);
+
+        pfds[nfds].fd = new_fd;
+        pfds[nfds].events = POLLIN;
+        nfds++;
+
+        Message welcome = {0};
+        welcome.type = MSG_ROOM_READY;
+        snprintf(welcome.text, sizeof(welcome.text),
+                 "Welcome to room %d! Participants: %d/%d", room_id,
+                 clients + 1, max_participants);
+        send_json_message(new_fd, MSG_ROOM_READY, &welcome);
+
+        if (clients + 1 == max_participants && !spam_sent) {
+          Message limit = {0};
+          limit.type = MSG_SYSTEM;
+          strcpy(limit.text, "=== PARTICIPANT LIMIT REACHED! ===");
+
+          for (int i = 1; i < nfds; i++) {
+            send_json_message(pfds[i].fd, MSG_SYSTEM, &limit);
+            send_spam_to_client(pfds[i].fd);
           }
-
-          // Echo back to sender
-          response.type = MSG_CHAT;
-          snprintf(response.text, sizeof(response.text), "[Echo] %.502s",
-                   msg.text);
-          send_json_message(fd, MSG_CHAT, &response);
-        } else {
-          printf("[Room %d] Client fd=%d disconnected\n", room_id, fd);
-
-          epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-
-          for (int j = 0; j < client_count; j++) {
-            if (client_fds[j] == fd) {
-              client_fds[j] = client_fds[client_count - 1];
-              client_count--;
-              break;
-            }
-          }
-
-          if (client_count < max_participants) {
-            spam_sent = 0;
-          }
-
-          close(fd);
+          spam_sent = 1;
         }
       }
     }
+
+    for (int i = 1; i < nfds; i++) {
+      if (!(pfds[i].revents & POLLIN))
+        continue;
+
+      Message msg;
+      int fd = pfds[i].fd;
+
+      if (receive_json_message(fd, &msg)) {
+        Message forward = {0};
+        forward.type = MSG_ROOM_FORWARD;
+        snprintf(forward.text, sizeof(forward.text), "[Room %d] %s: %.458s",
+                 room_id, msg.username[0] ? msg.username : "Anonymous",
+                 msg.text);
+
+        for (int j = 1; j < nfds; j++) {
+          if (pfds[j].fd != fd) {
+            send_json_message(pfds[j].fd, MSG_ROOM_FORWARD, &forward);
+          }
+        }
+
+        Message echo = {0};
+        echo.type = MSG_CHAT;
+        snprintf(echo.text, sizeof(echo.text), "[Echo] %.502s", msg.text);
+        send_json_message(fd, MSG_CHAT, &echo);
+
+      } else {
+        close(fd);
+
+        pfds[i] = pfds[nfds - 1];
+        nfds--;
+        i--;
+
+        if (nfds - 1 < max_participants)
+          spam_sent = 0;
+      }
+    }
   }
+}
+
+Client *find_client(int fd) {
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i].socket == fd)
+      return &clients[i];
+  }
+  return NULL;
+}
+
+void server_loop(int server_fd) {
+  while (1) {
+    int ret = poll(pfds, nfds, -1);
+    if (ret < 0) {
+      perror("poll");
+      continue;
+    }
+
+    if (pfds[0].revents & POLLIN) {
+      while (1) {
+        int client_fd = accept(server_fd, NULL, NULL);
+        if (client_fd < 0) {
+          if (errno == EAGAIN || errno == EWOULDBLOCK)
+            break;
+          perror("accept");
+          break;
+        }
+
+        set_nonblocking(client_fd);
+        add_client(client_fd);
+        Message msg = {0};
+        msg.type = MSG_SYSTEM_HELLO;
+        strcpy(msg.text, "Enter your username");
+        send_json_message(client_fd, MSG_SYSTEM_HELLO, &msg);
+      }
+    }
+    for (int i = 1; i < nfds; i++) {
+      if (!(pfds[i].revents & POLLIN))
+        continue;
+
+      Client *c = find_client(pfds[i].fd);
+      if (!c) {
+        remove_client(pfds[i].fd);
+        continue;
+      }
+
+      Message msg;
+      int r = receive_json_message(c->socket, &msg);
+      if (r <= 0) {
+        remove_client(c->socket);
+        continue;
+      }
+
+      handle_message(c, &msg);
+    }
+  }
+}
+
+void handle_message(Client *c, Message *msg) {
+  Message reply = {0};
+
+  switch (c->state) {
+
+  case CLIENT_UNKNOWN:
+    if (msg->type != MSG_HELLO) {
+      return;
+    }
+
+    strncpy(c->username, msg->username, sizeof(c->username) - 1);
+    c->state = CLIENT_IN_LOBBY;
+
+    reply.type = MSG_SYSTEM_INVITE;
+    strcpy(reply.text, "Enter the desired number of participants (1–10)");
+    send_json_message(c->socket, reply.type, &reply);
+    break;
+
+  case CLIENT_IN_LOBBY:
+    if (msg->type != MSG_JOIN_ROOM || msg->players < 1 || msg->players > 10) {
+      reply.type = MSG_ERROR;
+      strcpy(reply.text, "Expected JOIN_ROOM with value 1–10");
+      send_json_message(c->socket, MSG_ERROR, &reply);
+      return;
+    }
+
+    c->desired_participants = msg->players;
+
+    reply.type = MSG_SYSTEM;
+    snprintf(reply.text, sizeof(reply.text),
+             "Looking for room with %d participants...", msg->players);
+    send_json_message(c->socket, reply.type, &reply);
+
+    transfer_to_room(c->socket, c->desired_participants);
+    break;
+
+  case CLIENT_IN_ROOM:
+    break;
+  }
+}
+
+void add_client(int fd) {
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i].socket == 0) {
+      clients[i].socket = fd;
+      clients[i].state = CLIENT_UNKNOWN;
+      clients[i].username[0] = '\0';
+      clients[i].desired_participants = 0;
+
+      pfds[nfds].fd = fd;
+      pfds[nfds].events = POLLIN;
+      nfds++;
+      return;
+    }
+  }
+  close(fd);
 }
 
 int run_server() {
@@ -496,34 +509,15 @@ int run_server() {
     return 1;
   }
 
+  set_nonblocking(server_fd);
+
+  pfds[0].fd = server_fd;
+  pfds[0].events = POLLIN;
+  nfds = 1;
+
   printf("Server started. Waiting for connections...\n");
 
-  while (1) {
-    struct sockaddr_in client_addr;
-    socklen_t addr_len = sizeof(client_addr);
-
-    int client_fd =
-        accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
-    if (client_fd < 0) {
-      perror("accept");
-      continue;
-    }
-
-    char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-    printf("New connection: %s:%d (fd=%d)\n", client_ip,
-           ntohs(client_addr.sin_port), client_fd);
-
-    handle_unknown(client_fd);
-
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-      if (clients[i].socket == client_fd) {
-        handle_lobby(client_fd);
-        transfer_to_room(client_fd, clients[i].desired_participants);
-        break;
-      }
-    }
-  }
+  server_loop(server_fd);
 
   close(server_fd);
   return 0;

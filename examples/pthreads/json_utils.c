@@ -5,7 +5,6 @@ void send_json_message(int socket, MessageType type, const Message *msg) {
   if (!json)
     return;
 
-  // Добавляем \n в конец для простоты парсинга
   size_t len = strlen(json);
   char *json_with_newline = malloc(len + 2);
   strcpy(json_with_newline, json);
@@ -22,31 +21,28 @@ bool receive_json_message(int socket, Message *msg) {
   static int buffer_pos = 0;
 
   while (1) {
-    // Проверяем, есть ли полное сообщение в буфере
     for (int i = 0; i < buffer_pos; i++) {
       if (buffer[i] == '\n') {
         buffer[i] = '\0';
         bool result = parse_json_message(buffer, msg);
 
-        // Сдвигаем оставшиеся данные
         memmove(buffer, buffer + i + 1, buffer_pos - i - 1);
         buffer_pos -= i + 1;
         return result;
       }
     }
 
-    // Читаем новые данные
     if (buffer_pos >= BUFFER_SIZE - 1) {
-      buffer_pos = 0; // Переполнение - сбрасываем буфер
+      buffer_pos = 0;
     }
 
     ssize_t bytes =
         recv(socket, buffer + buffer_pos, BUFFER_SIZE - buffer_pos - 1, 0);
     if (bytes <= 0) {
       if (bytes == 0)
-        return false; // Соединение закрыто
+        return false;
       if (errno == EAGAIN || errno == EWOULDBLOCK)
-        return false; // Нет данных
+        return false;
       return false;
     }
 
