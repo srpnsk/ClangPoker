@@ -23,7 +23,6 @@ typedef struct {
   int socket;
   ClientState state;
   int room_id;
-  char username[32];
   int desired_participants;
 } Client;
 
@@ -360,7 +359,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
       if (receive_json_message(fd, &msg)) {
         Message forward = {0};
         forward.type = MSG_ROOM_FORWARD;
-        snprintf(forward.text, sizeof(forward.text), "[Room %d] %s: %.458s",
+        snprintf(forward.text, sizeof(forward.text), "[Room %d] %s: %.469s",
                  room_id, msg.username[0] ? msg.username : "Anonymous",
                  msg.text);
 
@@ -372,7 +371,7 @@ void room_process(int room_id, int parent_fd, int max_participants) {
 
         Message echo = {0};
         echo.type = MSG_CHAT;
-        snprintf(echo.text, sizeof(echo.text), "[Echo] %.502s", msg.text);
+        snprintf(echo.text, sizeof(echo.text), "[Echo] %.504s", msg.text);
         send_json_message(fd, MSG_CHAT, &echo);
 
       } else {
@@ -455,11 +454,10 @@ void handle_message(Client *c, Message *msg) {
       return;
     }
 
-    strncpy(c->username, msg->username, sizeof(c->username) - 1);
     c->state = CLIENT_IN_LOBBY;
 
     reply.type = MSG_SYSTEM_INVITE;
-    strcpy(reply.text, "Enter the desired number of participants (1–10)");
+    strcpy(reply.text, "Enter the desired number of participants (2-6)");
     send_json_message(c->socket, reply.type, &reply);
     break;
 
@@ -491,7 +489,6 @@ void add_client(int fd) {
     if (clients[i].socket == 0) {
       clients[i].socket = fd;
       clients[i].state = CLIENT_UNKNOWN;
-      clients[i].username[0] = '\0';
       clients[i].desired_participants = 0;
 
       pfds[nfds].fd = fd;

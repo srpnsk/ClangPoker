@@ -338,23 +338,23 @@ void print_card_fancy(int x, int y, Card card, int index, bool highlight) {
   switch (card.color) {
   case COL_RED:
     color_char = 'R';
-    color_pair = COLOR_PAIR(1) | A_BOLD;
+    color_pair = COLOR_PAIR(1);
     break;
   case COL_YELLOW:
     color_char = 'Y';
-    color_pair = COLOR_PAIR(2) | A_BOLD;
+    color_pair = COLOR_PAIR(2);
     break;
   case COL_GREEN:
     color_char = 'G';
-    color_pair = COLOR_PAIR(3) | A_BOLD;
+    color_pair = COLOR_PAIR(3);
     break;
   case COL_BLUE:
     color_char = 'B';
-    color_pair = COLOR_PAIR(4) | A_BOLD;
+    color_pair = COLOR_PAIR(4);
     break;
   case COL_WILD:
     color_char = 'W';
-    color_pair = COLOR_PAIR(5) | A_BOLD;
+    color_pair = COLOR_PAIR(5);
     break;
   default:
     color_char = '?';
@@ -362,16 +362,18 @@ void print_card_fancy(int x, int y, Card card, int index, bool highlight) {
     break;
   }
 
-  if (highlight) {
+  if (highlight)
     color_pair |= A_REVERSE;
-  }
+
+  /* индекс — ВНЕ рамки */
+  mvprintw(y + 2, x - 4, "[%2d]", index);
 
   attron(color_pair);
-  mvprintw(y, x, "╔═══════╗");
-  mvprintw(y + 1, x, "║%c  %2d ║", color_char, index);
-  mvprintw(y + 2, x, "║  %s  ║", value_symbols[card.value]);
-  mvprintw(y + 3, x, "║      %c║", color_char);
-  mvprintw(y + 4, x, "╚═══════╝");
+  mvprintw(y, x, "+-------+");
+  mvprintw(y + 1, x, "| %c     |", color_char);
+  mvprintw(y + 2, x, "|  %s  |", value_symbols[card.value]);
+  mvprintw(y + 3, x, "|     %c |", color_char);
+  mvprintw(y + 4, x, "+-------+");
   attroff(color_pair);
 }
 
