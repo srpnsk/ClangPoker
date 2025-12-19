@@ -1,33 +1,43 @@
 #include "client_ui.h"
-#include <arpa/inet.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #define SERVER_PORT 8080
 
-char server_ip[INET_ADDRSTRLEN];
+int connect_to_server(const char *host, int port) {
+  struct addrinfo hints = {0}, *res, *rp;
+  int sock = -1;
+  char port_str[16];
 
-int connect_to_server() {
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    perror("socket");
+  snprintf(port_str, sizeof(port_str), "%d", port);
+
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  int err = getaddrinfo(host, port_str, &hints, &res);
+  if (err != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
     return -1;
   }
 
-  struct sockaddr_in server_addr;
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(SERVER_PORT);
+  for (rp = res; rp != NULL; rp = rp->ai_next) {
+    sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sock == -1)
+      continue;
 
-  if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
-    perror("inet_pton");
+    if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0)
+      break;
+
     close(sock);
-    return -1;
+    sock = -1;
   }
 
-  if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+  freeaddrinfo(res);
+
+  if (sock == -1) {
     perror("connect");
-    close(sock);
     return -1;
   }
 
@@ -35,6 +45,7 @@ int connect_to_server() {
 }
 
 int main(int argc, char *argv[]) {
+  char server_ip[INET_ADDRSTRLEN];
   if (argc < 2) {
     printf("Usage: %s <server_ip>\n", argv[0]);
     exit(EXIT_FAILURE);
@@ -44,7 +55,7 @@ int main(int argc, char *argv[]) {
   printf("=== GAME CLIENT ===\n");
   printf("Connecting to server...\n");
 
-  int sock = connect_to_server();
+  int sock = connect_to_server(server_ip, SERVER_PORT);
   if (sock < 0) {
     return 1;
   }
