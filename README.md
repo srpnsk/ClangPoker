@@ -24,7 +24,7 @@ There you can see 6 useful files.
 You can get `server.out` binary this way:
 
 ```bash
-gcc server.c msg.c utils.c -Wall -o server.out 
+gcc src/server.c src/msg.c src/utils.c -Wall -o server.out 
 ```
 
 ### Client
@@ -32,6 +32,6 @@ gcc server.c msg.c utils.c -Wall -o server.out
 And to compile `client.out` you should run this command:
 
 ```bash
-gcc client.c msg.c -Wall -o client.out -lncurses
+gcc src/client.c src/msg.c -Wall -o client.out -lncurses
 ```
 
