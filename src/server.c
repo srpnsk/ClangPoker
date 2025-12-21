@@ -184,12 +184,26 @@ void handle_message(client *cli, message *request) {
   }
   if (cli->room_ind != -1) {
     if (request->type == MSG_LEAVE_ROOM) {
+      int backup = cli->room_ind;
       set_room(cli, -1);
       build_room_list(reply);
-      if (write(cli->fd, reply, sizeof(message)) == -1) {
+      if (write(cli->fd, reply, sizeof(message)) != sizeof(message)) {
         remove_client(cli->fd);
         goto cleanup;
       }
+      int fds[all_rooms[backup].max_participants];
+      int count = get_clients_in_room(backup, fds);
+      init_msg(reply);
+      reply->type = MSG_CHAT;
+      snprintf(reply->text, TEXT, "Server: user %s left this room",
+               cli->username);
+      for (int i = 0; i < count; i++) {
+        if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+          remove_client(fds[i]);
+          continue;
+        }
+      }
+      goto cleanup;
     } else if (request->type == MSG_CHAT) {
       int fds[all_rooms[cli->room_ind].max_participants];
       int count = get_clients_in_room(cli->room_ind, fds);
