@@ -158,24 +158,17 @@ void handle_message(client *cli, message *request) {
           remove_client(cli->fd);
           goto cleanup;
         }
-        init_msg(reply);
-        build_room_list(reply);
-        if (write(cli->fd, reply, sizeof(message)) == -1) {
-          remove_client(cli->fd);
-          goto cleanup;
-        }
-      } else {
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-          if (all_clients[i].fd == -1)
-            continue;
+      }
+      for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (all_clients[i].fd == -1)
+          continue;
 
-          if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
-            message msg;
-            init_msg(&msg);
-            build_room_list(&msg);
-            if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
-              remove_client(all_clients[i].fd);
-            }
+        if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
+          message msg;
+          init_msg(&msg);
+          build_room_list(&msg);
+          if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
+            remove_client(all_clients[i].fd);
           }
         }
       }
@@ -186,10 +179,18 @@ void handle_message(client *cli, message *request) {
     if (request->type == MSG_LEAVE_ROOM) {
       int backup = cli->room_ind;
       set_room(cli, -1);
-      build_room_list(reply);
-      if (write(cli->fd, reply, sizeof(message)) != sizeof(message)) {
-        remove_client(cli->fd);
-        goto cleanup;
+      for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (all_clients[i].fd == -1)
+          continue;
+
+        if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
+          message msg;
+          init_msg(&msg);
+          build_room_list(&msg);
+          if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
+            remove_client(all_clients[i].fd);
+          }
+        }
       }
       int fds[all_rooms[backup].max_participants];
       int count = get_clients_in_room(backup, fds);
