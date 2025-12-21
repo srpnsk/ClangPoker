@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,8 @@ room all_rooms[MAX_ROOMS] = {[0 ... MAX_ROOMS - 1] = {-1, 0}};
 struct pollfd pfds[MAX_CLIENTS + 1] = {[0 ... MAX_CLIENTS] = {-1, 0, 0}};
 int nfds = 1;
 int anons = 0;
+
+bool need_lobby_refresh = false;
 
 void handle_signal(int sig) {
   if (sig == SIGINT || sig == SIGTERM) {
@@ -79,16 +82,34 @@ overflow:
   return;
 }
 
+void refresh_lobby() {
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (all_clients[i].fd == -1)
+      continue;
+
+    if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
+      message msg;
+      init_msg(&msg);
+      build_room_list(&msg);
+      if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
+        remove_client(all_clients[i].fd);
+      }
+    }
+  }
+}
+
 void handle_message(client *cli, message *request) {
   message *reply = malloc(sizeof(message));
   init_msg(reply);
   if (request->type == MSG_EXIT) {
     remove_client(cli->fd);
+    need_lobby_refresh = true;
     goto cleanup;
   }
   if (!(cli->username[0])) {
     if (request->type != MSG_HELLO) {
       remove_client(cli->fd);
+      need_lobby_refresh = true;
       goto cleanup;
     }
     if (!(request->username[0])) {
@@ -99,6 +120,7 @@ void handle_message(client *cli, message *request) {
     build_room_list(reply);
     if (write(cli->fd, reply, sizeof(message)) == -1) {
       remove_client(cli->fd);
+      need_lobby_refresh = true;
       goto cleanup;
     }
     goto cleanup;
@@ -107,23 +129,12 @@ void handle_message(client *cli, message *request) {
     if ((request->type != MSG_JOIN_ROOM) ||
         ((request->room_id == -1) && (request->participants == -1))) {
       remove_client(cli->fd);
+      need_lobby_refresh = true;
       goto cleanup;
     }
     if (request->room_id != -1) {
       set_room(cli, request->room_id);
-      for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (all_clients[i].fd == -1)
-          continue;
-
-        if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
-          message msg;
-          init_msg(&msg);
-          build_room_list(&msg);
-          if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
-            remove_client(all_clients[i].fd);
-          }
-        }
-      }
+      need_lobby_refresh = true;
       goto cleanup;
     }
     if (request->participants != -1) {
@@ -132,19 +143,7 @@ void handle_message(client *cli, message *request) {
             (all_rooms[i].current_participants <
              all_rooms[i].max_participants)) {
           set_room(cli, i);
-          for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (all_clients[i].fd == -1)
-              continue;
-
-            if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
-              message msg;
-              init_msg(&msg);
-              build_room_list(&msg);
-              if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
-                remove_client(all_clients[i].fd);
-              }
-            }
-          }
+          need_lobby_refresh = true;
           goto cleanup;
         }
       }
@@ -156,22 +155,11 @@ void handle_message(client *cli, message *request) {
             cli->username);
         if (write(cli->fd, reply, sizeof(message)) != sizeof(message)) {
           remove_client(cli->fd);
+          need_lobby_refresh = true;
           goto cleanup;
         }
       }
-      for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (all_clients[i].fd == -1)
-          continue;
-
-        if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
-          message msg;
-          init_msg(&msg);
-          build_room_list(&msg);
-          if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
-            remove_client(all_clients[i].fd);
-          }
-        }
-      }
+      need_lobby_refresh = true;
     }
     goto cleanup;
   }
@@ -179,19 +167,7 @@ void handle_message(client *cli, message *request) {
     if (request->type == MSG_LEAVE_ROOM) {
       int backup = cli->room_ind;
       set_room(cli, -1);
-      for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (all_clients[i].fd == -1)
-          continue;
-
-        if (all_clients[i].username[0] && all_clients[i].room_ind == -1) {
-          message msg;
-          init_msg(&msg);
-          build_room_list(&msg);
-          if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
-            remove_client(all_clients[i].fd);
-          }
-        }
-      }
+      need_lobby_refresh = true;
       int fds[all_rooms[backup].max_participants];
       int count = get_clients_in_room(backup, fds);
       init_msg(reply);
@@ -201,6 +177,7 @@ void handle_message(client *cli, message *request) {
       for (int i = 0; i < count; i++) {
         if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
           remove_client(fds[i]);
+          need_lobby_refresh = true;
           continue;
         }
       }
@@ -214,12 +191,14 @@ void handle_message(client *cli, message *request) {
       for (int i = 0; i < count; i++) {
         if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
           remove_client(fds[i]);
+          need_lobby_refresh = true;
           continue;
         }
       }
       goto cleanup;
     } else {
       remove_client(cli->fd);
+      need_lobby_refresh = true;
       goto cleanup;
     }
   }
@@ -264,8 +243,10 @@ void server_loop(void) {
           continue;
         }
         msg->type = MSG_HELLO;
-        if (write(client_fd, msg, sizeof(message)) != sizeof(message))
+        if (write(client_fd, msg, sizeof(message)) != sizeof(message)) {
           remove_client(client_fd);
+          need_lobby_refresh = true;
+        }
         free(msg);
         msg = NULL;
       }
@@ -280,6 +261,7 @@ void server_loop(void) {
         ssize_t r = read(c->fd, msg, sizeof(message));
         if (r != sizeof(message)) {
           remove_client(c->fd);
+          need_lobby_refresh = true;
           free(msg);
           msg = NULL;
           continue;
@@ -287,8 +269,14 @@ void server_loop(void) {
 
         handle_message(c, msg);
       }
-      if (pfds[i].revents & (POLLHUP | POLLERR))
+      if (pfds[i].revents & (POLLHUP | POLLERR)) {
         remove_client(pfds[i].fd);
+        need_lobby_refresh = true;
+      }
+    }
+    if (need_lobby_refresh) {
+      need_lobby_refresh = false;
+      refresh_lobby();
     }
   }
 }
@@ -332,9 +320,8 @@ int main(void) {
 
   pfds[0] = (struct pollfd){.fd = server_fd, .events = POLLIN, .revents = 0};
 
-  printf("Server started. Waiting for connections...\n");
-
   server_loop();
+
   for (int i = 0; i < nfds; i++) {
     if (pfds[i].fd != -1)
       close(pfds[i].fd);

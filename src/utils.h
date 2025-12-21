@@ -20,8 +20,6 @@ extern int nfds;
 
 int create_room(int max_participants);
 client *find_client_by_fd(int fd);
-char *get_username(int fd);
-int get_room(int fd);
 int set_room(client *cl, int room);
 int add_client(int fd);
 void remove_client(int fd);

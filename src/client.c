@@ -146,6 +146,7 @@ void dispatch_server_msg(message *msg) {
     strncpy(last_ui_error, msg->text, TEXT);
     break;
   case MSG_LIST_ROOMS: {
+    memset(&rooms_to_print, 0, sizeof(rooms_to_print));
     uint8_t *p = (uint8_t *)msg->text;
     uint8_t room_count = *p++;
     if (!room_count) {
@@ -182,15 +183,15 @@ void dispatch_server_msg(message *msg) {
       }
     }
     selected_room = 0;
-    if (ui_state == UI_WAIT_SIZE)
+    if (ui_state == UI_CHOOSE_ROOM)
+      ;
+    else if (ui_state == UI_WAIT_SIZE)
       backup_ui_state = UI_LOBBY_DECISION;
     else
       ui_state = UI_LOBBY_DECISION;
     break;
   }
   default:
-    // because server doesn't send MSG_JOIN_ROOM, MSG_LEAVE_ROOM, MSG_EXIT to
-    // client
     ui_state = UI_EXIT;
     break;
   }
@@ -207,6 +208,7 @@ void ui_render(void) {
   clear();
   switch (ui_state) {
   case UI_ENTER_NAME:
+    mvprintw(1, 2, "Press ESC to exit app");
     mvprintw(2, 2, "Enter your name:");
     mvprintw(4, 2, "> ");
     mvprintw(4, 4, "%s", input);
@@ -214,24 +216,26 @@ void ui_render(void) {
     break;
 
   case UI_LOBBY_DECISION:
+    mvprintw(1, 2, "Press ESC to exit app");
     mvprintw(2, 2, "Lobby:");
     mvprintw(4, 4, "1) Join existing room");
     mvprintw(5, 4, "2) Create new room");
-    mvprintw(7, 2, "Choice:");
+    mvprintw(7, 2, "Choice: %d", selected_decision + 1);
     move(4 + selected_decision, 4);
     break;
 
   case UI_CHOOSE_PARTICIPANTS:
+    mvprintw(1, 2, "ESC to exit app; F1 to return to choise");
     mvprintw(2, 2, "Choose number of participants (2 - 7):");
     mvprintw(4, 2, "2 3 4 5 6 7");
-    mvprintw(3, 2, "Press F1 to return to choise.");
+    mvprintw(3, 2, "2-7 to select an option; ENTER to confirm your choise");
     move(4, 2 + (selected_participants * 2));
     break;
 
   case UI_CHOOSE_ROOM: {
+    mvprintw(1, 2, "ESC to exit app; F1 to return to choise.");
     mvprintw(2, 2, "Available rooms:");
-    mvprintw(3, 2, "Press F1 to return to choise.");
-    mvprintw(4, 2, "(use arrows / number, Enter to join)");
+    mvprintw(4, 2, "Up/Down/0-9 to select, Enter to join");
 
     int y = 5;
     for (int i = 0; i < rooms_to_print.total_rooms; i++) {
@@ -240,7 +244,7 @@ void ui_render(void) {
         attron(A_REVERSE);
       }
 
-      mvprintw(y + i, 4, "[%d] Room #%d  (%d/%d)", i + 1,
+      mvprintw(y + i, 4, "[%d] Room #%d  (%d/%d)", i,
                rooms_to_print.room_info[i].room_id,
                rooms_to_print.room_info[i].current_participants,
                rooms_to_print.room_info[i].capacity);
@@ -250,7 +254,7 @@ void ui_render(void) {
       int x = 35;
       for (int u = 0; u < rooms_to_print.room_info[i].current_participants;
            u++) {
-        mvprintw(y, x, "%s", rooms_to_print.room_info[i].users[u]);
+        mvprintw(y + i, x, "%s", rooms_to_print.room_info[i].users[u]);
         x += strlen(rooms_to_print.room_info[i].users[u]) + 1;
       }
     }
@@ -259,8 +263,8 @@ void ui_render(void) {
   }
   case UI_CHAT: {
     mvprintw(2, 2, "Chat:");
-    mvprintw(3, 2, "F1 - leave room");
-    int max_lines = LINES - 5; // сколько строк помещается
+    mvprintw(1, 2, "F1 - leave room; ESC - exit app; ENTER - to send message");
+    int max_lines = LINES - 5;
     int start = chat.count - 1 - chat.scroll;
     int y = 3;
 
@@ -423,6 +427,13 @@ void ui_handle_input(int sock) {
   case UI_CHOOSE_PARTICIPANTS:
     if (ch >= '2' && ch <= '7') {
       selected_participants = ch - '2';
+    } else if (ch == KEY_LEFT) {
+      selected_participants = (selected_participants + 1) % 7;
+    } else if (ch == KEY_RIGHT) {
+      if ((selected_participants - 1) < 0)
+        selected_participants = 5;
+      else
+        selected_participants--;
     } else if ((ch == '\n') || (ch == '\r') || (ch == KEY_ENTER)) {
       message msg;
       init_msg(&msg);

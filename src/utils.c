@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <stdio.h>
 #include <string.h>
 #include <sys/poll.h>
 #include <unistd.h>
@@ -13,6 +14,7 @@ int create_room(int max_participants) {
     if (all_rooms[i].max_participants == -1) {
       all_rooms[i].max_participants = max_participants;
       all_rooms[i].current_participants = 0;
+      printf("created a new room with %d capacity\n", max_participants);
       return i;
     }
   }
@@ -24,6 +26,8 @@ static void remove_room(int room_ind) {
   if ((room_ind < 0) || (room_ind >= MAX_ROOMS))
     return;
   all_rooms[room_ind].current_participants = 0;
+  printf("removed room %d with capacity %d\n", room_ind,
+         all_rooms[room_ind].max_participants);
   all_rooms[room_ind].max_participants = -1;
 }
 
@@ -36,39 +40,26 @@ client *find_client_by_fd(int fd) {
   return NULL;
 }
 
-char *get_username(int fd) {
-  client *cl = find_client_by_fd(fd);
-  if (cl != NULL) {
-    return cl->username;
-  }
-  return NULL;
-}
-
-int get_room(int fd) {
-  client *cl = find_client_by_fd(fd);
-  if (cl != NULL) {
-    return cl->room_ind;
-  }
-  return -1;
-}
-
 int set_room(client *cl, int room) {
+  if (!cl)
+    return -1;
   if (room < 0) {
     if (cl->room_ind != -1) {
       int backup = cl->room_ind;
       all_rooms[backup].current_participants--;
       cl->room_ind = -1;
+      printf("client %d moved from room %d to lobby\n", cl->fd, backup);
       if (all_rooms[backup].current_participants == 0) {
         remove_room(backup);
       }
     }
     return 0;
-  }
-  if ((cl) && (room < MAX_ROOMS) &&
-      (all_rooms[room].current_participants <
-       all_rooms[room].max_participants)) {
+  } else if ((room >= 0) && (room < MAX_ROOMS) &&
+             (all_rooms[room].current_participants <
+              all_rooms[room].max_participants)) {
     cl->room_ind = room;
     all_rooms[room].current_participants++;
+    printf("client %d now in room %d\n", cl->fd, room);
     return 0;
   }
   return -1;
@@ -80,6 +71,7 @@ static int find_free_slot(void) {
       return i;
     }
   }
+  printf("no more free client slots!\n");
   return -1;
 }
 
@@ -95,6 +87,7 @@ int add_client(int fd) {
   pfds[nfds].fd = fd;
   pfds[nfds].events = POLLIN;
   nfds++;
+  printf("created client %d\n", fd);
   return slot;
 }
 
@@ -122,6 +115,7 @@ void remove_client(int fd) {
       }
     }
     close(fd);
+    printf("successfully removed client and closed their fd %d\n", fd);
   }
 }
 
@@ -138,5 +132,6 @@ int get_clients_in_room(int room, int *result_fds) {
       count++;
     }
   }
+  printf("there are %d clients in room %d\n", count, room);
   return count;
 }
