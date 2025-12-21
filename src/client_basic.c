@@ -183,9 +183,9 @@ void dispatch_server_msg(message *msg) {
     }
     selected_room = 0;
     if (ui_state == UI_WAIT_SIZE)
-      backup_ui_state = UI_CHOOSE_ROOM;
+      backup_ui_state = UI_LOBBY_DECISION;
     else
-      ui_state = UI_CHOOSE_ROOM;
+      ui_state = UI_LOBBY_DECISION;
     break;
   }
   default:
