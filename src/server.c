@@ -14,6 +14,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// for mallocs
+#define FATAL_OOM()                                                            \
+  do {                                                                         \
+    perror("out of memory");                                                   \
+    running = 0;                                                               \
+    return;                                                                    \
+  } while (0)
+
 volatile sig_atomic_t running = 1;
 client all_clients[MAX_CLIENTS] = {[0 ... MAX_CLIENTS - 1] = {"", -1, -1}};
 room all_rooms[MAX_ROOMS] = {[0 ... MAX_ROOMS - 1] = {-1, 0}};
@@ -102,8 +110,29 @@ void refresh_lobby() {
 
 void handle_message(client *cli, message *request) {
   message *reply = malloc(sizeof(message));
+  if (!reply) {
+    FATAL_OOM();
+  }
   init_msg(reply);
   if (request->type == MSG_EXIT) {
+    if (cli->room_ind != -1) {
+      int backup = cli->room_ind;
+      set_room(cli, -1);
+      need_lobby_refresh = true;
+      int fds[all_rooms[backup].max_participants];
+      int count = get_clients_in_room(backup, fds);
+      init_msg(reply);
+      reply->type = MSG_CHAT;
+      snprintf(reply->text, TEXT, "Server: user %s left this room",
+               cli->username);
+      for (int i = 0; i < count; i++) {
+        if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+          remove_client(fds[i]);
+          need_lobby_refresh = true;
+          continue;
+        }
+      }
+    }
     remove_client(cli->fd);
     need_lobby_refresh = true;
     goto cleanup;
@@ -270,7 +299,7 @@ cleanup:
 
 void server_loop(void) {
   while (running) {
-    int ret = poll(pfds, nfds, 1000);
+    int ret = poll(pfds, nfds, 50);
     if (ret < 0) {
       if (errno == EINTR)
         continue;
@@ -295,6 +324,9 @@ void server_loop(void) {
         fcntl(client_fd, F_SETFL, fcntl(client_fd, F_GETFL, 0) | O_NONBLOCK);
 
         message *msg = malloc(sizeof(message));
+        if (!msg) {
+          FATAL_OOM();
+        }
         init_msg(msg);
         if (add_client(client_fd) < 0) {
           strcpy(msg->text, "No more slots for clients, sorry");
@@ -323,6 +355,9 @@ void server_loop(void) {
           continue;
         }
         message *msg = malloc(sizeof(message));
+        if (!msg) {
+          FATAL_OOM();
+        }
         ssize_t r = read(c->fd, msg, sizeof(message));
         if (r != sizeof(message)) {
           remove_client(c->fd);
@@ -332,6 +367,7 @@ void server_loop(void) {
           continue;
         }
         handle_message(c, msg);
+        msg = NULL;
       }
     }
     if (need_lobby_refresh) {

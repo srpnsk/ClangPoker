@@ -590,7 +590,7 @@ int main(int argc, char *argv[]) {
         ui_state = backup_ui_state;
     }
     ui_render();
-    int ready = poll(&pfd, 1, 1000);
+    int ready = poll(&pfd, 1, 50);
     if (ready < 0) {
       if (errno == EINTR)
         continue;
