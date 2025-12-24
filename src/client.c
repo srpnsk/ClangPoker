@@ -409,7 +409,14 @@ void ui_handle_input(int sock) {
       selected_decision = 0;
     } else if (ch == '2') {
       selected_decision = 1;
-    } else if ((ch == '\n') || (ch == '\r') || (ch == KEY_ENTER)) {
+    } else if (ch == KEY_UP) {
+      if (selected_decision == 0)
+        selected_decision = 1;
+      else
+        selected_decision--;
+    } else if (ch == KEY_DOWN)
+      selected_decision = (selected_decision + 1) % 2;
+    else if ((ch == '\n') || (ch == '\r') || (ch == KEY_ENTER)) {
       if (!selected_decision) {
         if (ui_state == UI_WAIT_SIZE)
           backup_ui_state = UI_CHOOSE_ROOM;

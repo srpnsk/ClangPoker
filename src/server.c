@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -93,6 +94,7 @@ void refresh_lobby() {
       build_room_list(&msg);
       if (write(all_clients[i].fd, &msg, sizeof(msg)) != sizeof(msg)) {
         remove_client(all_clients[i].fd);
+        need_lobby_refresh = true;
       }
     }
   }
@@ -133,11 +135,17 @@ void handle_message(client *cli, message *request) {
       goto cleanup;
     }
     if (request->room_id != -1) {
-      set_room(cli, request->room_id);
+      set_room(cli,
+               request->room_id); // в случае ошибки мы по сути просто не
+                                  // добавляем клиента в комнату и он остается в
+                                  // лобби, но он получает обновленный (на самом
+                                  // деле ничего не изменилось) список комнат
       need_lobby_refresh = true;
       goto cleanup;
     }
-    if (request->participants != -1) {
+    if (request->participants !=
+        -1) { // мы создаем новую комнату ТОЛЬКО если нет свободного места в той
+              // комнате, в которой такая же вместимость, как и в запрашиваемой
       for (int i = 0; i < MAX_ROOMS; i++) {
         if ((all_rooms[i].max_participants == request->participants) &&
             (all_rooms[i].current_participants <
@@ -152,7 +160,7 @@ void handle_message(client *cli, message *request) {
         snprintf(
             reply->text, TEXT,
             "Failed to create room for client [%s]: no more available rooms!",
-            cli->username);
+            cli->username); // прекрасно, мы не удаляем клиента при ошибке
         if (write(cli->fd, reply, sizeof(message)) != sizeof(message)) {
           remove_client(cli->fd);
           need_lobby_refresh = true;
@@ -160,6 +168,22 @@ void handle_message(client *cli, message *request) {
         }
       }
       need_lobby_refresh = true;
+    }
+    if (cli->room_ind != -1) { // успешно добавили клиента в комнату -> должны
+                               // уведомить участников
+      int fds[all_rooms[cli->room_ind].max_participants];
+      int count = get_clients_in_room(cli->room_ind, fds);
+      init_msg(reply);
+      reply->type = MSG_CHAT;
+      snprintf(reply->text, TEXT, "Server: user %s joined this room",
+               cli->username);
+      for (int i = 0; i < count; i++) {
+        if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+          remove_client(fds[i]);
+          need_lobby_refresh = true;
+          continue;
+        }
+      }
     }
     goto cleanup;
   }
@@ -221,6 +245,10 @@ void server_loop(void) {
       continue;
     }
 
+    if (pfds[0].revents & (POLLHUP | POLLERR)) {
+      fprintf(stderr, "listening socket is dead\n");
+      break;
+    }
     if (pfds[0].revents & POLLIN) {
       while (running) {
         int client_fd = accept(pfds[0].fd, NULL, NULL);
@@ -252,6 +280,10 @@ void server_loop(void) {
       }
     }
     for (int i = 1; i < nfds; i++) {
+      if (pfds[i].revents & (POLLHUP | POLLERR)) {
+        remove_client(pfds[i].fd);
+        need_lobby_refresh = true;
+      }
       if (pfds[i].revents & POLLIN) {
         client *c = find_client_by_fd(pfds[i].fd);
         if (!c) {
@@ -266,12 +298,7 @@ void server_loop(void) {
           msg = NULL;
           continue;
         }
-
         handle_message(c, msg);
-      }
-      if (pfds[i].revents & (POLLHUP | POLLERR)) {
-        remove_client(pfds[i].fd);
-        need_lobby_refresh = true;
       }
     }
     if (need_lobby_refresh) {
