@@ -315,7 +315,7 @@ void ui_handle_input(int sock) {
     ui_state = UI_EXIT;
     return;
   }
-  if (ch == 27) {
+  if (ch == 27) { // ESC
     message *exit_request = malloc(sizeof(message));
     init_msg(exit_request);
     exit_request->type = MSG_EXIT;
@@ -427,9 +427,9 @@ void ui_handle_input(int sock) {
   case UI_CHOOSE_PARTICIPANTS:
     if (ch >= '2' && ch <= '7') {
       selected_participants = ch - '2';
-    } else if (ch == KEY_LEFT) {
-      selected_participants = (selected_participants + 1) % 7;
     } else if (ch == KEY_RIGHT) {
+      selected_participants = (selected_participants + 1) % 6;
+    } else if (ch == KEY_LEFT) {
       if ((selected_participants - 1) < 0)
         selected_participants = 5;
       else
