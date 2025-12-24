@@ -1,7 +1,6 @@
 #include "utils.h"
 #include <stdio.h>
 #include <string.h>
-#include <sys/poll.h>
 #include <unistd.h>
 
 // client all_clients[MAX_CLIENTS] = {[0 ... MAX_CLIENTS - 1] = {"", -1, -1}};
