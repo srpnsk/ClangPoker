@@ -4,13 +4,13 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -140,6 +140,22 @@ void handle_message(client *cli, message *request) {
                                   // добавляем клиента в комнату и он остается в
                                   // лобби, но он получает обновленный (на самом
                                   // деле ничего не изменилось) список комнат
+      if (cli->room_ind != -1) { // успешно добавили клиента в комнату -> должны
+                                 // уведомить участников
+        int fds[all_rooms[cli->room_ind].max_participants];
+        int count = get_clients_in_room(cli->room_ind, fds);
+        init_msg(reply);
+        reply->type = MSG_CHAT;
+        snprintf(reply->text, TEXT, "Server: user %s joined this room",
+                 cli->username);
+        for (int i = 0; i < count; i++) {
+          if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+            remove_client(fds[i]);
+            need_lobby_refresh = true;
+            continue;
+          }
+        }
+      }
       need_lobby_refresh = true;
       goto cleanup;
     }
@@ -151,6 +167,22 @@ void handle_message(client *cli, message *request) {
             (all_rooms[i].current_participants <
              all_rooms[i].max_participants)) {
           set_room(cli, i);
+          if (cli->room_ind != -1) { // успешно добавили клиента в комнату ->
+                                     // должны уведомить участников
+            int fds[all_rooms[cli->room_ind].max_participants];
+            int count = get_clients_in_room(cli->room_ind, fds);
+            init_msg(reply);
+            reply->type = MSG_CHAT;
+            snprintf(reply->text, TEXT, "Server: user %s joined this room",
+                     cli->username);
+            for (int i = 0; i < count; i++) {
+              if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+                remove_client(fds[i]);
+                need_lobby_refresh = true;
+                continue;
+              }
+            }
+          }
           need_lobby_refresh = true;
           goto cleanup;
         }
@@ -167,24 +199,25 @@ void handle_message(client *cli, message *request) {
           goto cleanup;
         }
       }
-      need_lobby_refresh = true;
-    }
-    if (cli->room_ind != -1) { // успешно добавили клиента в комнату -> должны
-                               // уведомить участников
-      int fds[all_rooms[cli->room_ind].max_participants];
-      int count = get_clients_in_room(cli->room_ind, fds);
-      init_msg(reply);
-      reply->type = MSG_CHAT;
-      snprintf(reply->text, TEXT, "Server: user %s joined this room",
-               cli->username);
-      for (int i = 0; i < count; i++) {
-        if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
-          remove_client(fds[i]);
-          need_lobby_refresh = true;
-          continue;
+      if (cli->room_ind != -1) { // успешно добавили клиента в комнату -> должны
+                                 // уведомить участников
+        int fds[all_rooms[cli->room_ind].max_participants];
+        int count = get_clients_in_room(cli->room_ind, fds);
+        init_msg(reply);
+        reply->type = MSG_CHAT;
+        snprintf(reply->text, TEXT, "Server: user %s joined this room",
+                 cli->username);
+        for (int i = 0; i < count; i++) {
+          if (write(fds[i], reply, sizeof(message)) != sizeof(message)) {
+            remove_client(fds[i]);
+            need_lobby_refresh = true;
+            continue;
+          }
         }
       }
+      need_lobby_refresh = true;
     }
+
     goto cleanup;
   }
   if (cli->room_ind != -1) {
@@ -237,7 +270,7 @@ cleanup:
 
 void server_loop(void) {
   while (running) {
-    int ret = poll(pfds, nfds, 50);
+    int ret = poll(pfds, nfds, 1000);
     if (ret < 0) {
       if (errno == EINTR)
         continue;
@@ -315,6 +348,12 @@ int main(void) {
   act.sa_flags = 0;
   sigaction(SIGINT, &act, NULL);
   sigaction(SIGTERM, &act, NULL);
+
+  struct sigaction pipe_act;
+  sigemptyset(&pipe_act.sa_mask);
+  pipe_act.sa_flags = 0;
+  pipe_act.sa_handler = SIG_IGN;
+  sigaction(SIGPIPE, &pipe_act, NULL);
 
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {

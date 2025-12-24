@@ -4,15 +4,14 @@
 #include <ncurses.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #define MIN_WIDTH 80
@@ -591,7 +590,7 @@ int main(int argc, char *argv[]) {
         ui_state = backup_ui_state;
     }
     ui_render();
-    int ready = poll(&pfd, 1, 50);
+    int ready = poll(&pfd, 1, 1000);
     if (ready < 0) {
       if (errno == EINTR)
         continue;
